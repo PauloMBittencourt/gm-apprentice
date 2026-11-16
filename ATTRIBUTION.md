@@ -281,6 +281,22 @@ notice above.
   (pp. 396–439) by name only.
 - `disciplines.md` — Disciplines, Thaumaturgy and Necromancy paths and
   rituals: V20 Chapter Four (pp. 128–243).
+- `humanity-paths.md` — degeneration, Humanity, Conviction and
+  Instinct, eight Paths of Enlightenment (Hierarchies of Sins condensed
+  to one paraphrased line per rating, rationales omitted), derangements:
+  V20 Chapter Seven (pp. 309–339) and Chapter Six (pp. 289–292).
+- `skills.md` — the 30 Abilities and the dramatic systems that use
+  them: V20 Chapter Three (pp. 100–110) and Chapters Five and Six
+  (pp. 254–266).
+- `sects.md` — sects, the Six Traditions (paraphrased, not quoted),
+  the Code of Milan (paraphrased), titles and boons: V20 Chapter One
+  (pp. 20–26) and Chapter Two (pp. 38–47).
+- `creatures.md` — ghouls, hunters and True Faith, werewolves, mages,
+  faeries, ghosts, demons, animals and swarms; NPC templates reduced to
+  key numbers: V20 Chapter Nine (pp. 368–392) and Appendix
+  (pp. 496–503).
+- `equipment-weapons.md` — melee, ranged and armour charts (names and
+  numbers only, brand-name examples dropped): V20 pp. 280–281.
 
 ## D&D Beyond
 

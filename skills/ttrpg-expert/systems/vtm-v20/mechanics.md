@@ -255,8 +255,9 @@ Animal blood and old blood are less nourishing.
 
 ### Hunger
 
-V20 has no fixed hunger threshold. The Beast presses through three
-rules:
+The Storytelling chapter gives a rule of thumb: a vampire is
+**hungry** when its blood pool is below **7 minus Self-Control (or
+Instinct)**. The Beast presses through three rules:
 - A **Self-Control/Instincts roll can't use more dice than the
   blood pool currently holds**. A vampire on 2 points rolls at most
   2 dice to resist frenzy.
@@ -267,7 +268,7 @@ rules:
   rules call for spending blood (such as rising). Past
   Incapacitated this way, it falls into torpor until fed.
 
-*Source: V20 pp. 268, 283, 298*
+*Source: V20 pp. 268, 283, 298, 366*
 
 ## Health
 
