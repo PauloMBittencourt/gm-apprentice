@@ -254,14 +254,18 @@ Paradox Interactive AB. This is unofficial fan material, not
 approved or endorsed by Paradox Interactive. V20 has no open
 licence; the intended basis is the
 [Dark Pack Agreement](https://paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement).
-**Status: work in progress.** The exact Dark Pack notice text and
-maintainer approval are still pending (see the TODO in the pack's
-`NOTICE.md`).
+Required notice: "Portions of the materials are the copyrights and
+trademarks of Paradox Interactive AB, and are used with permission.
+All rights reserved. For more information please visit
+worldofdarkness.com." The pack's `NOTICE.md` carries it.
+**Status: work in progress.** Maintainer approval of the Dark Pack
+terms (non-commercial only; the Dark Pack logo wherever the material
+is promoted) is still pending.
 
 **System pack in `skills/ttrpg-expert/systems/vtm-v20/`**
 Source: *Vampire: The Masquerade 20th Anniversary Edition* (Onyx Path
 Publishing / Paradox Interactive).
-License: Dark Pack Agreement (pending confirmation).
+License: Dark Pack Agreement (maintainer approval pending).
 Transformation: mechanics summarised in original wording, as short
 tables of names, costs, dice pools and difficulties, with a
 `*Source: V20 p. X*` page reference on each section. No rules text,
@@ -297,6 +301,9 @@ notice above.
   (pp. 496–503).
 - `equipment-weapons.md` — melee, ranged and armour charts (names and
   numbers only, brand-name examples dropped): V20 pp. 280–281.
+- `session-procedures.md` — chronicle building, prelude, hunting
+  scenes, hunger, storytelling techniques and experience awards: V20
+  Chapter Eight (pp. 345–366) and pp. 122–124.
 
 ## D&D Beyond
 
