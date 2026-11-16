@@ -12,6 +12,8 @@ system-agnostic. For system-specific post-session mechanics
 - GURPS 4e: `systems/gurps-4e/session-procedures.md`
 - FitD: `systems/fitd/session-procedures.md` (coin, rep, heat,
   entanglements, downtime, XP triggers)
+- V20: `systems/vtm-v20/session-procedures.md` (hunting scenes,
+  hunger, Humanity pacing, Kindred politics, XP awards)
 
 ## Campaign Structure
 

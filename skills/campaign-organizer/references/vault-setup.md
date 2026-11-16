@@ -18,8 +18,8 @@ runs here — the vault starts at the current version.
    ```
 
    `--system` takes `coc-7e`, `coc-7e-regency`, `gurps-4e`,
-   `dnd-5e-2024`, `pf2e`, `fitd` or a common alias (`coc`, `gurps`,
-   `dnd`, `pathfinder`, `blades`); `--no-system` gives generic
+   `dnd-5e-2024`, `pf2e`, `fitd`, `vtm-v20` or a common alias (`coc`,
+   `gurps`, `dnd`, `pathfinder`, `blades`, `vtm`); `--no-system` gives generic
    templates, for no system or one not listed. `--inbox` adds
    `_inbox/` when the GM wants vault-ingest staging.
 3. **Create.** On the GM's yes, run it again with `--write`. It

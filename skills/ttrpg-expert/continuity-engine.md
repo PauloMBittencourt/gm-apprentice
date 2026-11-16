@@ -9,6 +9,7 @@ with active analysis and repair.
 checking plot holes or tracking state, also read:
 - CoC 7e: `systems/coc-7e/session-procedures.md`
 - FitD: `systems/fitd/factions.md` (tier/hold/clock state)
+- V20: `systems/vtm-v20/sects.md` (who rules, titles, boons owed)
 
 Continuity errors damage player trust. Prevention through
 systematic tracking is cheaper than repair through retcon.

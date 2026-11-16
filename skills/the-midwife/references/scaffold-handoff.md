@@ -123,7 +123,7 @@ gma vault-scaffold \
 ```
 
 `<id>` is `coc-7e`, `coc-7e-regency`, `gurps-4e`, `dnd-5e-2024`,
-`pf2e` or `fitd`. Use `--no-system` when no system was chosen or
+`pf2e`, `fitd` or `vtm-v20`. Use `--no-system` when no system was chosen or
 the plugin does not support it. A system name the script does not
 recognise is refused with the list: pass the matching id or
 `--no-system`.

@@ -11,13 +11,19 @@ https://github.com/AntTheLimey/gm-apprentice.
 
 Applies to every file in this directory.
 
-<!-- TODO before PR: paste the exact legal text the Dark Pack Agreement
-requires (https://paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement)
-and confirm with the maintainer that this licence fits the repo. -->
+<!-- TODO before PR: confirm with the maintainer that the Dark Pack
+Agreement fits the repo (it is non-commercial only and asks for the
+Dark Pack logo wherever the material is promoted). -->
 
-> Vampire: The Masquerade and World of Darkness are trademarks of
-> Paradox Interactive AB. This is unofficial fan material, not approved or
-> endorsed by Paradox Interactive. It contains no rules text from the
-> books: mechanics are summarised in our own words, with page references
-> to *Vampire: The Masquerade 20th Anniversary Edition* (V20) so a
-> Storyteller can check the book they own.
+> Portions of the materials are the copyrights and trademarks of
+> Paradox Interactive AB, and are used with permission. All rights
+> reserved. For more information please visit worldofdarkness.com.
+>
+> This material is released under the Dark Pack Agreement
+> (https://paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement).
+> It is unofficial fan material, not official World of Darkness material,
+> and is not approved or endorsed by Paradox Interactive. It is free and
+> non-commercial. It contains no rules text from the books: mechanics are
+> summarised in our own words, with page references to *Vampire: The
+> Masquerade 20th Anniversary Edition* (V20) so a Storyteller can check
+> the book they own.

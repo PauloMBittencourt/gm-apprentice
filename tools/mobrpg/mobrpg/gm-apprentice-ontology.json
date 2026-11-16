@@ -115,7 +115,8 @@
     {"id": "gurps-4e", "name": "GURPS", "aliases": ["gurps", "gurps4e"]},
     {"id": "dnd-5e-2024", "name": "D&D 5e 2024", "aliases": ["dnd", "dnd-5e", "dnd5e", "5e", "d&d"]},
     {"id": "pf2e", "name": "Pathfinder", "aliases": ["pathfinder", "pathfinder-2e", "pf2", "pf2e-remaster"]},
-    {"id": "fitd", "name": "Forged in the Dark", "aliases": ["blades", "bitd"]}
+    {"id": "fitd", "name": "Forged in the Dark", "aliases": ["blades", "bitd"]},
+    {"id": "vtm-v20", "name": "Vampire: The Masquerade V20", "aliases": ["vtm", "v20", "vtm20", "vampire-v20", "vampire-the-masquerade"]}
   ],
   "vault_folders": [
     {"folder": "Characters/PCs", "types": ["pc"], "site": "characters/pcs"},

@@ -511,6 +511,17 @@
         "blades",
         "bitd"
       ]
+    },
+    {
+      "id": "vtm-v20",
+      "name": "Vampire: The Masquerade V20",
+      "aliases": [
+        "vtm",
+        "v20",
+        "vtm20",
+        "vampire-v20",
+        "vampire-the-masquerade"
+      ]
     }
   ],
   "vault_folders": [

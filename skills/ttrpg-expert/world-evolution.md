@@ -31,7 +31,8 @@ visible to the GM before it becomes canon.
   appears near the boarding house twice" — not "agents begin
   surveillance."
 - **Match system tone.** CoC: creeping dread. FitD: noir crime.
-  D&D: living political/adventure landscape.
+  D&D: living political/adventure landscape. V20: Gothic-Punk
+  intrigue where every favour has a price.
 
 ## Storage Checkpoint (standalone only)
 
@@ -68,6 +69,7 @@ System-specific modules override when available:
 - CoC: `systems/coc-7e/session-procedures.md`
 - D&D: `systems/dnd-5e-2024/session-procedures.md`
 - PF2e: `systems/pf2e/session-procedures.md`
+- V20: `systems/vtm-v20/session-procedures.md`
 - GURPS/Generic: Universal Faction Turn as-is
 
 ### Step 3: NPC Reactions

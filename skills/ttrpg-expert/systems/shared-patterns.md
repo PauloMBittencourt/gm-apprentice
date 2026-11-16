@@ -38,6 +38,7 @@ When designing features:
 | D&D 5e (2024) | Heroic, adventurous, high-fantasy optimism | PCs are exceptional from level 1; the world rewards boldness |
 | Pathfinder 2e (Remaster) | Heroic high fantasy with tactical depth | Competence and teamwork win the day; the three-action economy rewards clever, coordinated play |
 | Forged in the Dark | Noir grit, desperate ambition, messy consequences | Scoundrels claw for scraps of power; nothing comes clean |
+| Vampire: The Masquerade V20 | Personal and political horror, Gothic-Punk decay | The monster is the protagonist; every night trades a little Humanity for power, and elders treat the young as pawns |
 | GURPS 4e | Neutral / setting-dependent | Tone is set entirely by the campaign frame; the system itself is transparent |
 
 When generating content (NPCs, locations, plot hooks), match the

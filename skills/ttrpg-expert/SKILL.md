@@ -215,6 +215,23 @@ investigation. No keyword or tag → base files only.
 | Combat / actions | `rules-reference.md` | |
 | GM math (DCs, XP budgets, treasure) | `session-procedures.md` | |
 
+### Vampire: The Masquerade V20 (`systems/vtm-v20/`)
+
+Storyteller, not GM; Kindred, coterie, chronicle, chapter. Read
+`NOTICE.md` limits: paraphrase only, cite V20 pages.
+
+| Request | File |
+|---------|------|
+| Clans / weaknesses / bloodlines | `clans.md` |
+| Disciplines / Thaumaturgy / Necromancy | `disciplines.md` |
+| Abilities / dramatic systems / hunting rolls | `skills.md` |
+| Humanity / Paths / degeneration / derangements | `humanity-paths.md` |
+| Sects / Traditions / titles / boons | `sects.md` |
+| Ghouls / hunters / werewolves / other creatures / animals | `creatures.md` |
+| Weapons / armour | `equipment-weapons.md` |
+| Combat / frenzy / blood bond / diablerie / torpor | `rules-reference.md` |
+| Hunting scenes / hunger / XP awards / faction turn | `session-procedures.md` |
+
 ### Personal reference files
 
 `systems/{system}/personal/` (and subfolders like

@@ -102,6 +102,18 @@ RULES: dict[str, Rule] = {
         attribution_marker="## GURPS",
         describe="the SJG Online Policy notice",
     ),
+    # V20 has no open licence: fan use under Paradox's Dark Pack Agreement,
+    # paraphrase only, with its required legal notice.
+    "vtm-v20": Rule(
+        all_of=(
+            r"Paradox\s+Interactive\s+AB",
+            r"used with permission",
+            r"worldofdarkness\.com",
+            r"Dark Pack",
+        ),
+        attribution_marker="Vampire: The Masquerade 20th Anniversary Edition",
+        describe="the Dark Pack copyright notice",
+    ),
     # CoC files derive from BRP (ORC), Lovecraft (public domain) or are our
     # own descriptions of mechanics; the notice records which is which.
     "coc-7e": Rule(
