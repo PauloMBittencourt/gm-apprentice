@@ -247,6 +247,41 @@ License: SJG Online Policy
 Transformation: modifier names and numbers used in a sum, each
 with its page reference in a code comment. Names and numbers only.
 
+## Vampire: The Masquerade 20th Anniversary Edition
+
+Vampire: The Masquerade and World of Darkness are trademarks of
+Paradox Interactive AB. This is unofficial fan material, not
+approved or endorsed by Paradox Interactive. V20 has no open
+licence; the intended basis is the
+[Dark Pack Agreement](https://paradoxinteractive.com/games/world-of-darkness/community/dark-pack-agreement).
+**Status: work in progress.** The exact Dark Pack notice text and
+maintainer approval are still pending (see the TODO in the pack's
+`NOTICE.md`).
+
+**System pack in `skills/ttrpg-expert/systems/vtm-v20/`**
+Source: *Vampire: The Masquerade 20th Anniversary Edition* (Onyx Path
+Publishing / Paradox Interactive).
+License: Dark Pack Agreement (pending confirmation).
+Transformation: mechanics summarised in original wording, as short
+tables of names, costs, dice pools and difficulties, with a
+`*Source: V20 p. X*` page reference on each section. No rules text,
+setting prose or art is reproduced; elder powers and rituals above
+level 5 are listed by name only. Each file was checked against the
+book for accuracy. The directory ships a `NOTICE.md` carrying the
+notice above.
+
+- `mechanics.md`, `rules-reference.md` — dice, actions, combat, health,
+  blood, Willpower, frenzy and Rötschreck: V20 Chapters Five and Six
+  (pp. 247–302).
+- `character-generation.md`, `character-sheet.md` — creation steps,
+  freebie and experience costs: V20 Chapter Three (pp. 79–124) and
+  the merits and flaws appendix (pp. 479–494).
+- `clans.md` — the thirteen clans, Caitiff and their weaknesses: V20
+  Chapter Two (pp. 33–73), with bloodlines from Chapter Ten
+  (pp. 396–439) by name only.
+- `disciplines.md` — Disciplines, Thaumaturgy and Necromancy paths and
+  rituals: V20 Chapter Four (pp. 128–243).
+
 ## D&D Beyond
 
 D&D Beyond is a service of Wizards of the Coast LLC. This project is
