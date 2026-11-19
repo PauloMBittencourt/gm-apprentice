@@ -1,6 +1,6 @@
 # gma image
 
-Use it when the GM asks for a picture for a note: a portrait (PC, NPC, creature, heritage, document), a location, faction, organization or item, or a scene picture in a Wrap-Up's Narrative Recap. Use it unasked only as "When no one asked" below says, and for a fill as "A fill" says. `status` shows the source, whether Codex can draw, the service, model, key, this month's spending, the Image Guidance note's path and any job still `waiting`.
+Use it when the GM asks for a picture for a note: a portrait (PC, NPC, creature, heritage, document), a location, faction, organization or item, or a scene picture in a Wrap-Up's Narrative Recap. Event notes are not a kind it draws: a session's events get their picture as a scene picture in the recap, so never promise an Event its own. Use it unasked only as "When no one asked" below says, and for a fill as "A fill" says. `status` shows the source, whether Codex can draw, the service, model, key, this month's spending, the Image Guidance note's path and any job still `waiting`.
 
 Who draws is the GM's choice, never yours: `vault.images.source` is `codex` (an installed Codex on a ChatGPT plan, no money), `self` (your own image tool, no money; see "Drawing them yourself" below) or `service` (the set service and model, paid). If `plan` says to choose, put the three choices to the GM (`status` says whether Codex can draw) and set the one they name. Pass `--source` only when the GM names a source for this batch. `plan`'s first line after the job number says what draws.
 
@@ -18,7 +18,7 @@ When no one asked (your skill's steps send you here when the version check print
 
 - Only after the skill's own work and report are done and nothing is waiting on the GM's answer. session-play never draws unasked.
 - The GM chose the source when they set it: drawing with it needs no further yes. Ask only what the tool asks (a price, a limit).
-- Write the requests as one list. A wrap-up asks for the session's big moments, as many as the Direction calls for, each `after` its recap paragraph, plus the notes this session created that have no picture. Any other skill asks for the notes it created that have no picture. No PCs.
+- Write the requests as one list. A wrap-up asks for the session's big moments, as many as the Direction calls for, each `after` the recap paragraph that tells it, plus the notes this session created that have no picture. Action comes first: each fight, chase or set piece shown in motion, the blow and not the body; a long fight can take more than one (its opening, its turn, its end). Then the dramatic beats: a reveal, a death as it happens, a decisive choice, a confrontation. A quiet beat or an aftermath only when the session had nothing bigger. Any other skill asks for the notes it created that have no picture. No PCs.
 - `self` and no image tool: plan nothing; see "Drawing them yourself".
 - `plan --unprompted`. It plans nothing, and you draw nothing, when more than 10 are asked for (offer them to the GM as a fill of those same requests) or when there is no Image Guidance note (offer to draft it, as step 2 says; draw once it is written).
 - Tell the GM in one line how many pictures, who draws, about how long (Codex about a minute each) and the cost if paid. It is not a question: go on to steps 3 to 5.

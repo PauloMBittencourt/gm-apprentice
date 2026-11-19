@@ -173,9 +173,14 @@ From the site directory:
 
 ```bash
 npm run build                                   # generate docs/
-npx wrangler@4 pages project create <project-name> --production-branch=main
+npx wrangler@4 pages project create <project-name> --production-branch=main --force
 npx wrangler@4 pages deploy --branch=main
 ```
+
+`--force` goes on the create alone: without it wrangler hands the
+create to Cloudflare Workers and stops with "Missing entry-point to
+Worker script or to assets directory". A wrangler too old to know the
+flag says so (an older copy in the npx cache): run the create without it.
 
 The scaffold ships a `wrangler.toml` with `pages_build_output_dir = "docs"`,
 so the deploy is `npx wrangler@4 pages deploy --branch=main` — no `docs/`
@@ -229,10 +234,15 @@ into the inbox or the live status bar: either the streamlined
 steps further down in this section. Already-deployed inbox sites are
 unaffected — this only changes what a brand-new site ships.
 
-> **The PC roster already renders as a static initiative table at Tier 1** —
-> with no backend at all. Setting up the live status bar (`setup-status-bar`,
-> below) is what turns that static table into a live, phone-updatable board;
-> the inbox reuses the same KV namespace.
+> **The party page already shows a static initiative table at Tier 1** —
+> with no backend at all — when the site shows character sheets, the game
+> system has a party board, and at least one PC in play has board data.
+> Setting up the live status bar (`setup-status-bar`, below) is what turns
+> that static table into a live, phone-updatable board; with sheets off
+> there is no table to turn. The inbox reuses the same KV namespace.
+> The party page is the generated index of the PCs; a note you write as
+> the PCs folder's own index (`Index.md`) replaces it, and the board is
+> not on that page.
 
 ### The fast way — `setup-status-bar` / `setup-inbox`
 
@@ -304,7 +314,7 @@ files, then redeploy.
 ### `/api/loadout-list` (GM party dashboard — read only)
 
 `GET /api/loadout-list?campaign=<campaignId>` returns every party member's live
-state (`{ "<key>": {v,items,hp,fp,updatedAt}, … }`) for the roster-page party
+state (`{ "<key>": {v,items,hp,fp,updatedAt}, … }`) for the party page's party
 board. It is **read-only** — it exposes only `onRequestGet`, never a write. Bound
 to the same `INBOX` KV namespace as `/api/loadout`; no new namespace or binding is
 needed. With a switch on it ships with the rebuild; a legacy site

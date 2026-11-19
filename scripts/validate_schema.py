@@ -4,7 +4,7 @@ Validate campaign entity frontmatter against the schema defined in entity-schema
 
 Checks:
 - Required fields exist per entity type
-- Enum values are valid (canon_status, status, scene_type, etc.)
+- Enum values are valid (canon_status, status, etc.)
 - Universal temporal fields are present where expected
 
 Usage:
@@ -180,7 +180,7 @@ def find_stale_pcs(campaign_dir: Path) -> FreshnessResult:
     """Find active PC entity sheets lagging the campaign overview's asOfSession.
 
     Only `type: pc` sheets are inspected — never `character-story`
-    companions or the `pc_roster` digest. The check no-ops when
+    companions. The check no-ops when
     there is no campaign overview asOfSession to compare against.
     """
     campaign_asof = None

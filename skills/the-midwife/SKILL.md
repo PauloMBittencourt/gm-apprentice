@@ -69,8 +69,8 @@ adventure; read topic files only as the conversation needs them.
 guaranteed): `discoveries.md`, `chapter-shape.md`,
 `weather-atmosphere.md`, `cover-stories.md`, `social-events.md`,
 `romance-threads.md`, and folders `adventures/`, `npcs/`,
-`entity-sketches/`, `image-prompts/`, `session-0/` (one
-`{name}.md` each).
+`locations/`, `factions/` (one per entity type sketched),
+`image-prompts/`, `session-0/` (one `{name}.md` each).
 
 **Filing:** when the GM confirms content ("done", "let's move
 on"), write it to its topic file, update the adventure index, and
@@ -123,8 +123,10 @@ Stress Test, anti-patterns table — plus
 `ttrpg-expert/gm-session-patterns.md` (session 0) and
 `ttrpg-expert/arc-spotlight-reference.md` (long-term arcs).
 
-- **Shape:** help the GM choose linear, branching,
-  hub-and-spoke, open-node or sandbox deliberately.
+- **Shape:** work out with the GM how the sessions run (which
+  go in order, which are open for the players to choose, and why),
+  in the GM's words. Adventure Shapes are patterns to offer, not a
+  label to pick; the brief's `### Adventure Shape` holds the answer.
 - **Scope:** reflect what is emerging rather than asking
   "campaign or one-shot?"; an existing vault inherits scope.
   Campaign → arcs, long-term factions, PC growth. One-shot →
@@ -164,7 +166,9 @@ Write confirmed decisions to `chapter-shape.md`.
   locations and look for tie-ins in the relationship graph, so it
   reads as continuation rather than a bolted-on module.
 
-File confirmed NPCs to `npcs/`, sub-adventures to `adventures/`.
+File confirmed NPCs to `npcs/`, other entities to a folder named
+for their type (`locations/`, `factions/`, `creatures/`,
+`items/`), sub-adventures to `adventures/`.
 
 ### Woven Worldbuilding (Adventure Creation)
 

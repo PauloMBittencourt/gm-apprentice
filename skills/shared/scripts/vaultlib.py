@@ -260,10 +260,12 @@ FLOW_ITEM_RE = re.compile(
 
 def _list_item(raw: str) -> str:
     """One list item: a quoted one decoded as a quoted value is (#597);
-    anything else kept as before (`- #tag` is not dropped as a comment)."""
+    anything else up to a ` #` comment, as a value is (`- #tag` is not
+    dropped as a comment)."""
     item = raw.strip()
     if QUOTED_SCALAR_RE.match(item):
         return scalar_value(item)
+    item = re.split(r"\s+#", item, maxsplit=1)[0].strip()
     return item.strip('"').strip("'")
 
 
@@ -505,7 +507,9 @@ def voice_read(text: str) -> str | None:
         return None
     value = "" if raw.startswith("#") else re.split(r"\s#", raw, maxsplit=1)[0]
     value = value.strip()
-    return "" if value.casefold() in YAML_NULL_WORDS else value
+    if value.casefold() in YAML_NULL_WORDS or is_escaped_empty(value):
+        return ""
+    return value
 
 
 def voice_value(text: str) -> str:
@@ -620,7 +624,8 @@ def delete_key(fm: list[str], key: str) -> str | None:
 
 
 def opens_a_block(fm: list[str], key: str) -> bool:
-    """Does `key:` carry an indented block rather than a scalar?
+    """Does `key:` carry an indented block (or a list whose `- ` items sit at
+    column zero, as Obsidian writes them) rather than a scalar?
 
     `delete_key` and `set_key` both edit exactly one line. On a key whose
     value is a block list or a nested mapping that leaves the indented
@@ -633,9 +638,11 @@ def opens_a_block(fm: list[str], key: str) -> bool:
         if not pattern.match(line):
             continue
         for nxt in fm[i + 1:]:
-            if not nxt.strip():
+            # A blank or comment-only line between a key and its items is
+            # not the value; look past it.
+            if not nxt.strip() or nxt.lstrip().startswith("#"):
                 continue
-            return nxt[:1].isspace()
+            return nxt[:1].isspace() or nxt.startswith("- ") or nxt.rstrip() == "-"
         return False
     return False
 
@@ -831,6 +838,51 @@ def parse_session_number(value: Any) -> int | None:
         return None
     n = int(m.group(1))
     return n if n <= MAX_PLAUSIBLE_SESSION else None
+
+
+# A value that is only backslash-escaped empty quotes, as `voice: \"\"` (#715):
+# the midwife scaffold of 2026-11-16 wrote twelve NPC notes so. YAML reads a bare
+# `\"\"` as a four-character string, not an empty one. Exactly the two escaped
+# quotes of one kind, nothing around them.
+ESCAPED_EMPTY_RE = re.compile(r"""\\(["'])\\\1""")
+
+
+def is_escaped_empty(value: Any) -> bool:
+    """True for a value that is only escaped empty quotes."""
+    return isinstance(value, str) and ESCAPED_EMPTY_RE.fullmatch(value.strip()) is not None
+
+
+def effectively_empty(value: Any) -> bool:
+    """Whether a frontmatter value says nothing: absent, `""`, `[]`, `{}`,
+    only whitespace, or only escaped empty quotes."""
+    return (value is None or value in ("", [], {})
+            or (isinstance(value, str)
+                and (not value.strip() or is_escaped_empty(value))))
+
+
+ESCAPED_EMPTY_LINE_RE = re.compile(
+    r"""^([^\s#:][^:]*):([ \t]*)\\(["'])\\\3((?:[ \t]+#.*)?[ \t]*)$""")
+
+
+def escaped_empty_keys(text: str, fix: bool = False) -> tuple[list[str], str]:
+    """(keys, text) for a note: the top-level frontmatter keys whose whole
+    value is escaped empty quotes, and the text with each rewritten to `""`
+    when `fix` (a trailing comment and the line ending stay). Only the
+    frontmatter block is read; a list item or nested value is left alone."""
+    lines = text.splitlines(keepends=True)
+    end, err = frontmatter_span(lines)
+    if err or end <= 0:
+        return [], text
+    keys = []
+    for i in range(1, end):
+        body = lines[i].rstrip("\r\n")
+        m = ESCAPED_EMPTY_LINE_RE.match(body)
+        if m:
+            keys.append(m.group(1).strip())
+            if fix:
+                lines[i] = (f'{m.group(1)}:{m.group(2) or " "}""{m.group(4)}'
+                            + lines[i][len(body):])
+    return keys, "".join(lines)
 
 
 def before_play(value: Any) -> bool:
@@ -2084,6 +2136,52 @@ def run_relationships(vault: Path, args: list[str]) -> Any:
         return json.loads(done.stdout.decode("utf-8", "replace"))
     except ValueError as e:
         raise fail("it did not answer in JSON") from e
+
+
+def run_sheet_set(vault: Path, rel: str, text: str,
+                  pairs: list[str]) -> dict[str, Any]:
+    """`gm-publish sheet set --vault VAULT --file REL --stdin KEY=VALUE...`
+    on the note's text `text`: the publish tool's per-system writers (the
+    ones `flush` uses) put the values in the Stat Sheet's own cells. Returns
+    its JSON, { pc, markdown, changed, lines: [{kind, text}] }; it writes
+    nothing. The tool's own refusal (an unknown key, a bad value) is raised
+    as its one-line reason; any other failure says the tool could not be
+    asked."""
+    def fail(reason: str) -> PublishToolUnavailable:
+        return PublishToolUnavailable(
+            f"could not ask the publish tool to set the sheet: {reason}")
+
+    node = shutil.which("node")
+    if not node:
+        raise fail("node is not on PATH")
+    if PUBLISH_TOOL is None:
+        raise fail(MISSING_TOOL)
+    if not PUBLISH_TOOL.is_file():
+        raise fail(f"the publish tool is not at {PUBLISH_TOOL.as_posix()}")
+    try:
+        done = subprocess.run(
+            [node, str(PUBLISH_TOOL), "sheet", "set", "--vault", str(vault),
+             "--file", rel, "--stdin", *pairs],
+            input=text.encode("utf-8"), capture_output=True,
+            timeout=PUBLISH_LINES_TIMEOUT)
+    except subprocess.TimeoutExpired as e:
+        raise fail(f"it did not answer within {PUBLISH_LINES_TIMEOUT}s") from e
+    except OSError as e:
+        raise fail(f"node could not run ({e.__class__.__name__})") from e
+    if done.returncode != 0:
+        reason, own = _stderr_reason(done.stderr.decode("utf-8", "replace"))
+        if own:
+            raise PublishToolUnavailable(reason)
+        raise fail(reason or f"exit code {done.returncode}")
+    try:
+        answer = json.loads(done.stdout.decode("utf-8", "replace"))
+    except ValueError as e:
+        raise fail("it did not answer in JSON") from e
+    if not (isinstance(answer, dict) and isinstance(answer.get("markdown"), str)
+            and isinstance(answer.get("lines"), list)):
+        raise fail("its answer was not understood (a tool older than "
+                   "1.70.28 has no `sheet set`)")
+    return answer
 
 
 def _target_args(vault: Path, site_config: Path | None = None) -> list[str]:

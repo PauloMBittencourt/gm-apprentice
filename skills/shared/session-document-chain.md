@@ -22,6 +22,7 @@ status: planned
 documents:
   plan: "[[Session NN - Title - Plan]]"
   play_notes: "[[Session NN - Title - Play Notes]]"
+  export: null
   wrap_up: "[[Chapter_CC_Session_NN_Wrap_Up]]"
 world_evolved: null
 tags: []
@@ -29,14 +30,19 @@ tags: []
 ```
 
 **Date fields:** `play_date` is the real-world play date, always
-`YYYY-MM-DD`. `in_game_date` is the fictional date; the published
-timeline sorts it by its **4-digit year** and accepts ISO dates,
-month-name dates (`"August 11, 1814"`, `"July 1814"`) and seasonal
-phrases (`"Autumn 1813"`). Keep time-of-day out of the field
-(`"Evening, 11 August 1814"` loses its date) — put it in prose. For a
-non-Earth calendar, record the world's own format and never fabricate
-a Gregorian date; without a 4-digit year it is left off the timeline
-(not an error).
+`YYYY-MM-DD`. `in_game_date` is the fictional date, in whatever form
+the story keeps. A story without a calendar is normal: `"Day 2,
+morning"`, `"Night 1"`, or nothing at all. A relative date like that
+stays off the site's date-sorted timeline (it never invents a year
+for one); with no date the site can sort, the menu's Timeline is the
+campaign's own Timeline note, published as written, and nothing warns. Once
+the campaign's dates carry a **4-digit year** (some session's, event's
+or timeline entry's; a game may gain one later), the site's timeline
+sorts by it and accepts ISO dates, month-name dates (`"August 11,
+1814"`, `"July 1814"`) and seasonal phrases (`"Autumn 1813"`). From
+then keep time-of-day out of the field (`"Evening, 11 August 1814"`
+loses its date) — put it in prose. For a non-Earth calendar, record
+the world's own format and never fabricate a Gregorian date.
 
 **Status** is the furthest document that exists:
 
@@ -44,7 +50,7 @@ a Gregorian date; without a 4-digit year it is left off the timeline
 |--------|---------|
 | planned | Index created, no other documents |
 | prepped | Plan file exists |
-| played | Play Notes file exists |
+| played | Play Notes or an Export exists |
 | wrap-up | Wrap-Up file exists |
 | reviewed | GM has reviewed and confirmed the Wrap-Up |
 
@@ -79,7 +85,7 @@ document that owns it, where the skill that needs it reads it:
 
 | Bookkeeping | Where it goes |
 |---|---|
-| Plan, Play Notes, Wrap-Up links | frontmatter `documents:` |
+| Plan, Play Notes, Export, Wrap-Up links | frontmatter `documents:` |
 | Scene Index with prep states, key prep, image prompts, pre-play premise | the Plan |
 | Handoff briefs after play | the Wrap-Up's fenced `## GM Notes` |
 
@@ -119,9 +125,41 @@ chapter: "[[Chapter N - Title]]"
 campaign: ""
 canon_status: AUTHORITATIVE
 created_by: session-play    # or: vault-ingest | manual
+publish: false              # raw notes: the GM site still shows them
 tags: []
 ---
 ```
+
+### 3b. Export (`Session {NN} - {Title} - Export.md`)
+
+A table assistant's record of the session (a gmassistant.app export),
+placed whole and unedited: its `## Summary` is never rewritten. Filed
+by `vw export-new --session "<index>" --export PATH` (or `--export` on
+`session-new` / `play-notes-new`), which links it as
+`documents.export`. It sits beside the Play Notes, never inside them:
+each play record is its own file with one writer, so session-play can
+keep writing the Play Notes while the export arrives, in either order.
+The site treats it as it treats the Play Notes: `publish: false`
+keeps it off the player site, with or without a publish list, and the
+GM site still gives it a page, linked from the session's Story page.
+
+```yaml
+---
+type: session-export
+session: "[[Session NN - Title]]"
+session_number: N
+chapter: "[[Chapter N - Title]]"
+campaign: ""
+canon_status: AUTHORITATIVE
+created_by: manual          # or: session-play | vault-ingest (--created-by)
+publish: false
+source_file: "export.md"
+tags: []
+---
+```
+
+Older vaults may hold an export inside the Play Notes, under
+`## Narrative Record`; wrap-up reads it there too.
 
 ### 4. Session Wrap-Up (`Chapter_CC_Session_NN_Wrap_Up.md`)
 
@@ -142,7 +180,7 @@ session_number: N
 chapter: "[[Chapter N - Title]]"
 campaign: ""
 play_date: null                # "YYYY-MM-DD"
-in_game_date: null             # timeline format (see Session Index)
+in_game_date: null             # the story's own form (see Session Index)
 source_document: "[[Session NN - Title - Play Notes]]"
 canon_status: DRAFT
 created_by: session-wrapup
@@ -173,7 +211,8 @@ fenced `<!-- gm-only -->`.
 |---|---|---|---|
 | session-prep | Previous wrap-ups, vault | Plan file; index `status`, `documents.plan` | planned → prepped |
 | session-play | Plan file | Play Notes file, session index | prepped → played |
-| session-wrapup | Play Notes file | Wrap-Up file, entities, session index | played → wrap-up |
+| `vw export-new` | The export file | Export file, session index | prepped → played |
+| session-wrapup | Play Notes and Export | Wrap-Up file, entities, session index | played → wrap-up |
 | reconcile | Wrap-Up file | Promotes canon status, session index | wrap-up → reviewed |
 | vault-ingest | Old source material | Play Notes (reconstructed), session index | Then chains to wrapup → reconcile |
 
@@ -195,5 +234,6 @@ Chapters/Chapter 1 - Title/Sessions/
     ├── Session 01 - The Arrival.md           (index)
     ├── Session 01 - The Arrival - Plan.md
     ├── Session 01 - The Arrival - Play Notes.md
+    ├── Session 01 - The Arrival - Export.md   (when there is one)
     └── Chapter_01_Session_01_Wrap_Up.md
 ```

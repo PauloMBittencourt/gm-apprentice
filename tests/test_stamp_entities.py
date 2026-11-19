@@ -307,6 +307,63 @@ class IncrementTests(ScriptCase):
         self.assertEqual(path.read_bytes(), before)
 
 
+class AdvanceTests(ScriptCase):
+    """#716: a wrap-up moves a campaign from not_started to in_progress,
+    and never undoes a paused or completed one."""
+
+    def overview(self, status):
+        return self.note("Campaign_Overview.md", OVERVIEW.replace(
+            "sessions_played: 3", f'status: {status}\nsessions_played: 3'))
+
+    def test_moves_from_the_named_value(self):
+        for status in ('"not_started"', "not_started", "Not_Started"):
+            with self.subTest(status=status):
+                path = self.overview(status)
+                out = self.run_script("Campaign_Overview.md", "--advance",
+                                      "status=not_started:in_progress",
+                                      "--write")
+                self.assertIn("-> in_progress", out)
+                self.assertIn('status: "in_progress"\n',
+                              path.read_text(encoding="utf-8"))
+
+    def test_leaves_any_other_value_alone(self):
+        for status in ("paused", "completed", "abandoned", "in_progress"):
+            with self.subTest(status=status):
+                path = self.overview(status)
+                before = path.read_bytes()
+                out = self.run_script("Campaign_Overview.md", "--advance",
+                                      "status=not_started:in_progress",
+                                      "--write")
+                self.assertIn("left as it is", out)
+                self.assertEqual(path.read_bytes(), before)
+
+    def test_a_quoted_to_value_stays_a_string(self):
+        path = self.note("Campaign_Overview.md", OVERVIEW.replace(
+            "sessions_played: 3", "code: old\nsessions_played: 3"))
+        self.run_script("Campaign_Overview.md", "--advance", 'code=old:"9"',
+                        "--write")
+        self.assertIn('code: "9"\n', path.read_text(encoding="utf-8"))
+
+    def test_an_absent_field_is_left_absent(self):
+        path = self.note("Campaign_Overview.md", OVERVIEW)
+        self.run_script("Campaign_Overview.md", "--advance",
+                        "status=not_started:in_progress", "--write")
+        self.assertNotIn("\nstatus:", path.read_text(encoding="utf-8"))
+
+    def test_a_malformed_advance_is_a_usage_error(self):
+        self.note("Campaign_Overview.md", OVERVIEW)
+        for bad in ("status", "status=not_started", "status=:x", "=a:b",
+                    "t=10:30:11:45"):
+            with self.subTest(bad=bad):
+                self.run_script("Campaign_Overview.md", "--advance", bad,
+                                rc=2)
+
+    def test_reserved_fields_are_refused(self):
+        self.note("Campaign_Overview.md", OVERVIEW)
+        self.run_script("Campaign_Overview.md", "--advance",
+                        "canon_status=DRAFT:AUTHORITATIVE", rc=1)
+
+
 class CanonStatusTests(ScriptCase):
     def test_promote_draft(self):
         path = self.note("NPCs/Doc.md", SESSION_INDEX)
@@ -657,6 +714,196 @@ class SessionShapeTests(unittest.TestCase):
         self.assertEqual(se.session_shape("9"), "int")
         self.assertEqual(se.session_shape('"9"'), "int")
         self.assertEqual(se.session_shape("Chapter 4, Session 9"), "label")
+
+
+SCENE = fm(
+    "---",
+    "type: scene",
+    'chapter: "[[Chapter 1]]"',
+    "status: planned",
+    "scene_type:",
+    "entities: []",
+    "locations: []",
+    "tags: []",
+    "---",
+    "",
+    "**Situation:** The lift is down.",
+)
+
+
+class ListTests(ScriptCase):
+    """#761: --set writes a list as a list, --add appends one item, and a
+    link field's items are notes written as [[links]]."""
+
+    REL = "Chapters/Chapter 1/Scenes/Lucan's Call.md"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.scene = self.note(self.REL, SCENE)
+        self.note("Characters/NPCs/Ada Vane.md", fm(
+            "---", "type: npc", "canon_status: DRAFT", "aliases: [Ada]",
+            "---", "", "# Ada Vane"))
+        self.note("Locations/The Mill.md", fm(
+            "---", "type: location", "canon_status: DRAFT", "---", "",
+            "# The Mill"))
+
+    def fm_block(self) -> str:
+        return self.scene.read_text(encoding="utf-8").split("---\n")[1]
+
+    def test_a_list_is_written_as_a_block_list_not_a_string(self):
+        out = self.run_script(self.REL, "--set",
+                              'entities=["[[Ada Vane]]", "[[The Mill]]"]',
+                              "--write")
+        self.assertIn("STAMPED", out)
+        self.assertIn('entities:\n  - "[[Ada Vane]]"\n'
+                      '  - "[[The Mill]]"\nlocations: []\n', self.fm_block())
+        self.assertNotIn('entities: "[', self.fm_block())
+
+    def test_a_list_replaces_the_list_there(self):
+        self.run_script(self.REL, "--set", 'entities=["Ada Vane"]', "--write")
+        out = self.run_script(self.REL, "--set", 'entities=["The Mill"]',
+                              "--write")
+        self.assertIn('entities: ["[[Ada Vane]]"] -> entities: '
+                      '["[[The Mill]]"]', out)
+        self.assertIn('entities:\n  - "[[The Mill]]"\nlocations:',
+                      self.fm_block())
+        self.assertNotIn("Ada", self.fm_block())
+
+    def test_an_empty_list_writes_brackets(self):
+        self.run_script(self.REL, "--set", 'entities=["Ada"]', "--write")
+        self.run_script(self.REL, "--set", "entities=[]", "--write")
+        self.assertEqual(self.scene.read_text(encoding="utf-8"), SCENE)
+
+    def test_add_appends_and_skips_a_duplicate(self):
+        out = self.run_script(self.REL, "--add", "locations=The Mill",
+                              "--write")
+        self.assertIn("locations + [[The Mill]]", out)
+        self.assertIn('locations:\n  - "[[The Mill]]"\n', self.fm_block())
+        before = self.scene.read_text(encoding="utf-8")
+        out = self.run_script(self.REL, "--add", "locations=[[the mill]]",
+                              "--write")
+        self.assertIn("UNCHANGED", out)
+        self.assertIn("locations already lists [[The Mill]]", out)
+        self.assertEqual(self.scene.read_text(encoding="utf-8"), before)
+
+    def test_add_to_an_absent_field_makes_the_list(self):
+        self.run_script(self.REL, "--add", "participants=Ada", "--write")
+        self.assertIn('participants:\n  - "[[Ada Vane]]"\n',
+                      self.fm_block())
+
+    def test_add_to_text_is_refused(self):
+        self.run_script(self.REL, "--set", "scene_type=combat", "--write")
+        before = self.scene.read_text(encoding="utf-8")
+        out = self.run_script(self.REL, "--add", "scene_type=chase", rc=1)
+        self.assertIn("not a list; --add refused", out)
+        self.assertEqual(self.scene.read_text(encoding="utf-8"), before)
+
+    def test_a_bare_name_or_alias_becomes_the_notes_link(self):
+        out = self.run_script(self.REL, "--set",
+                              'entities=["Ada", "ada vane"]', "--write")
+        self.assertNotIn("WARNING", out)
+        # The alias and the file name are one note: listed once.
+        self.assertIn('entities:\n  - "[[Ada Vane]]"\nlocations:',
+                      self.fm_block())
+
+    def test_an_unknown_name_is_written_with_a_warning(self):
+        out = self.run_script(self.REL, "--set", 'entities=["Zed", "Ada"]',
+                              "--write")
+        self.assertIn(f"WARNING\t{self.REL}\tentities 'Zed': no note of "
+                      f"that name yet (linked as written)", out)
+        self.assertIn('  - "[[Zed]]"\n  - "[[Ada Vane]]"\n', self.fm_block())
+
+    def test_a_list_field_without_links_keeps_its_items_as_text(self):
+        self.run_script(self.REL, "--set", 'tags=["Ada", "night"]',
+                        "--write")
+        self.assertIn('tags:\n  - "Ada"\n  - "night"\n', self.fm_block())
+
+    def test_a_malformed_list_is_refused_and_nothing_written(self):
+        for value in ("entities=[Ada, Bram]", 'entities=["Ada", 3]',
+                      'entities=["Ada",', 'entities=[""]'):
+            out = subprocess.run(
+                [sys.executable, str(SCRIPT), str(self.vault), self.REL,
+                 "--set", value, "--write"],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(out.returncode, 2, value)
+            self.assertIn("--set entities", out.stderr)
+            self.assertEqual(self.scene.read_text(encoding="utf-8"), SCENE)
+
+    def test_two_notes_of_one_name_in_two_folders_stay_two(self):
+        self.run_script(self.REL, "--set", 'tags=["NPCs/Ada", "Places/Ada", '
+                        '"places/ada", "Ada"]', "--write")
+        # A folder tells two notes apart; the same folder, or none, is one.
+        self.assertIn('tags:\n  - "NPCs/Ada"\n  - "Places/Ada"\n',
+                      self.fm_block())
+        out = self.run_script(self.REL, "--add", "tags=Lanes/Ada", "--write")
+        self.assertIn("tags + Lanes/Ada", out)
+
+    def test_a_comment_between_items_does_not_end_the_list(self):
+        text = SCENE.replace("tags: []\n", 'tags:\n  - "old-a"\n'
+                             '# kept for later\n  - "old-b"\n')
+        self.scene.write_text(text, encoding="utf-8")
+        self.run_script(self.REL, "--set", 'tags=["new"]', "--write")
+        self.assertIn('tags:\n  - "new"\n---', self.scene.read_text(
+            encoding="utf-8"))
+        self.assertNotIn("old-b", self.scene.read_text(encoding="utf-8"))
+
+    def test_an_inline_mapping_is_not_replaced_by_a_list(self):
+        text = SCENE.replace("tags: []\n", 'tags: []\ndocuments: {plan: '
+                             '"[[P]]"}\n')
+        self.scene.write_text(text, encoding="utf-8")
+        out = self.run_script(self.REL, "--set", 'documents=["X"]', rc=1)
+        self.assertIn("documents holds a mapping", out)
+        self.assertEqual(self.scene.read_text(encoding="utf-8"), text)
+
+    def test_an_empty_list_needs_no_link_index(self):
+        args = se.parse_args([str(self.vault), self.REL, "--set",
+                              "entities=[]"])
+        self.assertFalse(se.needs_links(args))
+        args = se.parse_args([str(self.vault), self.REL, "--set",
+                              'entities=["Ada"]'])
+        self.assertTrue(se.needs_links(args))
+
+    def test_a_list_already_holding_those_items_is_unchanged(self):
+        text = SCENE.replace("entities: []", 'entities: ["[[Ada Vane]]", '
+                             '"[[The Mill]]"]')
+        self.scene.write_text(text, encoding="utf-8")
+        out = self.run_script(self.REL, "--set",
+                              'entities=["Ada", "The Mill"]', "--write")
+        self.assertIn("UNCHANGED", out)
+        self.assertIn('entities already ["[[Ada Vane]]", "[[The Mill]]"]', out)
+        self.assertEqual(self.scene.read_text(encoding="utf-8"), text)
+
+    def test_a_comment_after_an_item_is_not_part_of_it(self):
+        # `- foo # why` holds foo; the same --set leaves the comment be.
+        text = SCENE.replace("entities: []", "entities:\n"
+                             '  - "[[Ada Vane]]" # met in S1\n'
+                             "  - [[The Mill]] # burned down")
+        self.scene.write_text(text, encoding="utf-8")
+        out = self.run_script(self.REL, "--set",
+                              'entities=["Ada", "The Mill"]', "--write")
+        self.assertIn("UNCHANGED", out)
+        self.assertEqual(self.scene.read_text(encoding="utf-8"), text)
+
+    def test_a_dotted_key_takes_no_list(self):
+        self.run_script(self.REL, "--set", 'documents.x=["A"]', rc=2)
+
+    def test_scalars_are_written_as_before(self):
+        out = self.run_script(self.REL, "--set", "status=prepped",
+                              "--set", "chapter=[[Chapter 2]]",
+                              "--set", 'scene_type="[draft]"', "--write")
+        self.assertIn('status: planned -> status: "prepped"', out)
+        block = self.fm_block()
+        self.assertIn('chapter: "[[Chapter 2]]"\n', block)
+        self.assertIn('scene_type: "[draft]"\n', block)
+
+    def test_the_frontmatter_check_passes_the_result(self):
+        self.run_script(self.REL, "--set", 'entities=["Ada", "Zed"]',
+                        "--add", "locations=The Mill", "--write")
+        proc = subprocess.run(
+            [sys.executable, str(SCRIPTS / "vault_check.py"),
+             str(self.vault), "frontmatter"],
+            capture_output=True, text=True, timeout=120)
+        self.assertIn("# count: 0", proc.stdout, proc.stdout + proc.stderr)
 
 
 if __name__ == "__main__":

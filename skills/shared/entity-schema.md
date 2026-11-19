@@ -160,7 +160,8 @@ Every relationship on a non-PC entity also appears in the body,
 readable (a PC's body follows `shared/pc-body-structure.md`): under
 `## Related` (grouped People, Places, Groups, Things, one line per
 tie), or under `### Hidden Ties` in GM Notes when `gm_only: true`.
-Write, change or remove both together.
+Write, change or remove both together; for a new note the
+`entity-new` command of `gma vault-write` writes both from the ties.
 
 Extraction defaults: `tone: neutral` and `strength: 5` when the
 source is ambiguous; `bidirectional: false` unless inherently
@@ -256,8 +257,6 @@ chapter: "[[Chapter 1 - Title]]"
 status: planned            # planned | paused
                            # played | dropped
 played_in: []              # sessions, written by wrap-up
-scene_type:                # optional: investigation | social | combat | chase
-                           # transition | horror | downtime | other
 entities: []
 locations: []
 maps: []
@@ -322,10 +321,10 @@ consumable), `current_holder` (wiki-link: who has it now), `origin`
 (wiki-link: where or who it came from), `portrait`
 
 **Event:** `event_type` (battle, ritual, disaster, discovery,
-betrayal, meeting, celebration), `in_game_date` (the in-game date, in
-the campaign's calendar), `location` (wiki-link: where it happened),
-`participants` (wiki-links), `outcome` (one line; shown on the
-location's What Happened Here timeline)
+betrayal, meeting, celebration), `in_game_date` (the in-game date, as
+the story tells it ("Day 2", "May 1814")), `location` (wiki-link:
+where it happened), `participants` (wiki-links), `outcome` (one line;
+shown on the location's What Happened Here timeline)
 
 **Clue:** `clue_type` (physical, testimonial, documentary), `found_at`
 (wiki-link: where it is, or was found), `found_by` (wiki-link: who
@@ -363,11 +362,10 @@ note does.
 (wiki-link), `participants` (wiki-links), `locations` (wiki-links),
 `leads_to` (wiki-links)
 
-**Adventure Brief:** `title`, `system`, `scope`
-(campaign/few-shot/one-shot), `sessions_estimated`,
-`continuation_type`
-(new/new-arc/new-chapter/new-pcs/parallel/prequel/time-jump),
-`adventure_shape` (branching/hub-and-spoke/linear/open-node/sandbox)
+**Adventure Brief:** `title`, `system` (the game system's id, or
+undecided), `scope` (campaign/one-shot/few-shot), `sessions_estimated`
+(a number or a range), `continuation_type`
+(new/new-chapter/new-arc/time-jump/prequel/parallel/new-pcs)
 
 **Campaign Overview:** `campaign`, `game_system`, `setting_year`,
 `current_game_date`, `genre_tags`, `scope`
@@ -388,7 +386,7 @@ GM Notes to hide them.
 **Heritage:** `lifespan_range` (min/max age array), `maturity_age`,
 `average_height`, `notable_traits`, `portrait`
 
-**World Domain:** `domain`, `status` (active/inactive/stub),
+**World Domain:** `domain`, `status` (stub/active/inactive),
 `summary`, `rules` (array of world rules, a sentence each)
 
 **World Flags:** `last_reviewed`

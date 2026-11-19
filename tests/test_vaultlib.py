@@ -277,6 +277,26 @@ class FrontmatterEditorTests(unittest.TestCase):
         self.assertFalse(vl.opens_a_block(fm, "status"))
         self.assertFalse(vl.opens_a_block(fm, "absent"))
 
+    def test_opens_a_block_sees_a_list_at_column_zero(self):
+        fm = ["tags:\n", "- one\n", "status: DRAFT\n"]
+        self.assertTrue(vl.opens_a_block(fm, "tags"))
+        self.assertFalse(vl.opens_a_block(fm, "status"))
+
+    def test_opens_a_block_looks_past_a_comment(self):
+        # A comment line between a key and its items is not its value.
+        fm = ["scene_type:\n", "# kept for now\n", "  - combat\n",
+              "status: DRAFT\n"]
+        self.assertTrue(vl.opens_a_block(fm, "scene_type"))
+        fm = ["scene_type:\n", "# a note\n", "status: DRAFT\n"]
+        self.assertFalse(vl.opens_a_block(fm, "scene_type"))
+
+    def test_a_list_item_ends_at_a_comment_as_a_value_does(self):
+        fm = vl.extract_frontmatter(
+            "---\nname: a # b\ntags:\n  - foo # why\n  - #tag\n"
+            '  - "x # y"\n  - Room#3\n---\n')
+        self.assertEqual(fm["name"], "a")
+        self.assertEqual(fm["tags"], ["foo", "#tag", "x # y", "Room#3"])
+
     def test_delete_key_first_top_level_only(self):
         fm = self.fm("---\ntype: npc\ndocuments:\n  type: nested\n"
                      "type: duplicate\n---\n")
@@ -1188,7 +1208,8 @@ class BuildLinesTests(unittest.TestCase):
 
     def test_every_run_of_the_publish_tool_closes_its_stdin(self):
         # A tool that read stdin would wait on the caller's terminal; each
-        # one-shot run hands it nothing instead.
+        # one-shot run hands it nothing instead, or the text it is to read
+        # (`input=`, as `sheet set --stdin` takes the note).
         import ast
         for name in ("vaultlib.py", "vault_check.py"):
             tree = ast.parse((SCRIPTS / name).read_text(encoding="utf-8"))
@@ -1199,7 +1220,8 @@ class BuildLinesTests(unittest.TestCase):
                         and isinstance(node.func.value, ast.Name)
                         and node.func.value.id == "subprocess"):
                     with self.subTest(file=name, line=node.lineno):
-                        self.assertIn("stdin", [k.arg for k in node.keywords])
+                        self.assertTrue({"stdin", "input"}
+                                        & {k.arg for k in node.keywords})
 
     def test_unbalanced_markers_are_worded_as_scan_body_words_them(self):
         text = "a\n<!-- /spoiler -->\n<!-- gm-only -->\n<!-- /gm-only -->\n<!-- gm-only -->\nb"

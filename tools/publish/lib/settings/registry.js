@@ -91,7 +91,7 @@ const REGISTRY = [
   {
     name: 'vault.statuses.out_of_play', type: 'list', of: 'status words', group: 'vault',
     default: ['dead', 'deceased', 'kia', 'retired', 'departed', 'missing', 'unknown', 'inactive', 'npc', 'destroyed', 'dissolved'],
-    does: 'The statuses that take a character out of play. A character with one leaves the party board and the active team on the landing page, and is listed under "In Memoriam" instead; their sheet page stays. An empty list means nobody is ever out of play',
+    does: 'The statuses that take a character out of play. A character with one leaves the party board and the active team on the landing page, and is listed under "In Memoriam" there and under "Out of Play" on the party page instead; their sheet page stays. An empty list means nobody is ever out of play',
     left_out: '`dead`, `deceased`, `kia`, `retired`, `departed`, `missing`, `unknown`, `inactive`, `npc`, `destroyed`, `dissolved`',
   },
   {
@@ -308,7 +308,7 @@ const REGISTRY = [
   { name: 'gm_site.show', type: 'map', container: true },
   {
     name: 'gm_site.show.notes', type: 'switch', default: true, group: 'gm',
-    does: "Notes the player site leaves out (prep, drafts, the ones held back by the publish list) get a page, marked. A session's Play Notes always get a page on the GM site, whatever this says",
+    does: "Notes the player site leaves out (prep, drafts, the ones held back by the publish list) get a page, marked. A session's Play Notes and Export always get a page on the GM site, whatever this says",
     left_out: 'On',
   },
   {
@@ -384,7 +384,7 @@ const REGISTRY = [
   {
     name: 'player_site.hide.folders', was: [{ name: 'publish.exclude_dirs', in: 'vault' }, { name: 'excludeDirs', in: 'site' }], type: 'list', same: 'folder', of: 'folders', default: ['_meta', '_Templates'], guards: true,
  legacyKind: 'list', legacyMerge: 'union', group: 'published',
-    does: 'Vault folders never published',
+    does: 'Vault folders never published. The plugin\'s own working folders (`_midwife`, `_QA`, `_inbox`) never are, whatever this list holds',
     left_out: '`_meta`, `_Templates`',
   },
   {

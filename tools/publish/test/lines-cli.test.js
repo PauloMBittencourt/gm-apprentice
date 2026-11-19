@@ -300,6 +300,16 @@ describe('lines: dates (vault_check timeline --order asks it, so the two never r
     assert.deepStrictEqual(got.map((d) => d.iso), ['1814-08-03', '1814-08-12', '1814-09-10', '1814-09-01', '1813-10-01', '1921-03-01', null]);
     assert.deepStrictEqual(got.map((d) => d.day), [true, true, true, false, false, true, false]);
   });
+  it('never guesses a year: "Day 2" and "Night 1" stay undated (#697)', () => {
+    const got = answer({ op: 'dates', values: ['Day 2', 'Night 1', 'Day 9', 'Week 3', 'Day 2, morning'] }).dates;
+    assert.deepStrictEqual(got.map((d) => d.iso), [null, null, null, null, null]);
+    // A month with no year is still placed, as before: one unnamed year.
+    for (const v of ['March 5', 'Mar 5', '5 Mar', '1 March']) {
+      assert.notStrictEqual(answer({ op: 'dates', values: [v] }).dates[0].iso, null, v);
+    }
+    const page = { frontmatter: { type: 'event', in_game_date: 'Day 2' }, displayTitle: 'E', outputPath: 'e.html' };
+    assert.strictEqual(buildTimelineData([page]).events.length, 0);
+  });
   it('agrees with the timeline page for the same value', () => {
     const page = { frontmatter: { type: 'session', in_game_date: 'August 12-20, 1814', session_number: 1 }, displayTitle: 'S', outputPath: 's.html' };
     const fromTimeline = buildTimelineData([page]);
@@ -315,6 +325,12 @@ describe('lines: dates (vault_check timeline --order asks it, so the two never r
 
 describe('lines: moments (moments.py asks it, so the wrap-up tagger reads cards as the Story page does)', () => {
   const { KINDS } = require('../lib/story-moments');
+  it('a merged card carries its quote; any other card has no quote field (#705)', () => {
+    const got = answer({ op: 'moments', text: '## Memorable Moments\n\n**Beat.**\n\n> "Q."\n> — X\n\n**Alone.** #moment/epic\n' });
+    assert.strictEqual(got.section.cards[0].quote, '"Q."');
+    assert.strictEqual(got.section.cards[0].last, 5);
+    assert.strictEqual('quote' in got.section.cards[1], false);
+  });
   const WRAP = '# S1\n\n## Narrative Recap\n\nThey went.\n\n## Memorable Moments\n\n**Beat.**\n\n*Context.* #moment/funny\n\n> "Hi."\n> — Mara\n\n<!-- gm-only -->\n\n## GM Notes\n\n**Hidden.**\n\n<!-- /gm-only -->\n';
   const card = (over) => ({ kind: null, shape: 'narration', main: '', speaker: null, context: null, first: 0, last: 0, taggable: true, tags: [], ...over });
 

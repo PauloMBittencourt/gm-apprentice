@@ -21,6 +21,7 @@ const { pairHubs, isWrapUp, isPlayedSession } = require('./session-hub');
 const { getCanonStatus } = require('./templates/base');
 const { sitePin } = require('./site-pin');
 const { nameIn } = require('./settings');
+const { isWorkspaceDir } = require('./excluding-values');
 
 const TITLE_OF = { publishing: 'Publishing', excluded: 'Excluded', needsDecision: 'Needs Decision' };
 
@@ -245,7 +246,9 @@ async function runApply(options, deps, survey) {
   const missing = moves.filter((m) => !onDisk.has(m.rel) && !(m.section !== 'publishing' && inVault(m.rel)));
   if (missing.length > 0) {
     for (const m of missing) {
-      out(inVault(m.rel)
+      out(inVault(m.rel) && isWorkspaceDir(m.rel)
+        ? `cannot list under Publishing: ${m.rel} is in the plugin's own working notes, which are never published. To publish it, move the note into the campaign's own folders.`
+        : inVault(m.rel)
         ? `cannot list under Publishing: ${m.rel} is in a folder the site leaves out (${nameIn('player_site.hide.folders')}), so no page would be built. Put the folder on the site first, or record a decision with --exclude or --decide.`
         : `no such file in the vault: ${m.rel}`);
     }
@@ -268,6 +271,11 @@ async function runApply(options, deps, survey) {
     for (const rel of [...entries.keys()]) {
       if (!exists(path.join(vaultPath, rel))) { entries.delete(rel); pruned++; }
     }
+  }
+  // --prune-path: the named entries only, each only once its file is gone (the update that deletes a note takes its
+  // entry off and leaves every other one, a note away for now among them, with its decision).
+  for (const rel of (options.prunePaths || []).map((a) => canonicalPath(String(a).trim()))) {
+    if (entries.has(rel) && !exists(path.join(vaultPath, rel))) { entries.delete(rel); pruned++; }
   }
 
   mkdir(path.dirname(manifestPath));
@@ -437,10 +445,24 @@ function planPublishPlayed(survey, { only = null, includeUnreviewed = false, pub
     if (only !== null && publishBody) bodyTicks.push(rel);
     else unclear.push({ path: rel, reason, wrapUp: wrapRel });
   }
+  // A played session whose index the GM Excluded (often before play, as prep: #703) is
+  // never ticked, but it is said, with the way out: excluded before play, it would
+  // otherwise stay off the site in silence.
+  const excludedReason = (rel) => {
+    const why = (listed.get(rel) || {}).annotation;
+    return `the session index is Excluded${why ? ` ("${why}")` : ''}: if it should publish now it has been played, `
+      + `\`manifest apply --decide "${rel}"\`, then publish-played`;
+  };
+  if (only === null) {
+    for (const [rel, p] of pagesByRel) {
+      if (!onDisk.has(rel) || sectionOf(rel) !== 'excluded' || !isPlayedSession(p.frontmatter || {})) continue;
+      unclear.push({ path: rel, reason: excludedReason(rel), wrapUp: null });
+    }
+  }
   // The named path is not a played session index this call could tick: say which.
   if (only !== null && hubs.length === 0) {
     const fm = (pagesByRel.get(only) || {}).frontmatter || {};
-    const reason = sectionOf(only) === 'excluded' ? 'the session index is Excluded'
+    const reason = sectionOf(only) === 'excluded' ? excludedReason(only)
       : `not a played session index (type ${fm.type || 'none'}, status ${fm.status || 'none'})`;
     unclear.push({ path: only, reason, wrapUp: null });
   }

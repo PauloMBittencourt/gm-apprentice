@@ -36,6 +36,7 @@ Usage:
   gm-apprentice-publish inbox <cmd> [args]   Change-request queue (used by the loop)
   gm-apprentice-publish flush [options]      Write players' current KV live-state back into the vault sheets
   gm-apprentice-publish sheet show [options] Print one PC's sheet (--player-safe shows only what players see)
+  gm-apprentice-publish sheet set [options]  Write named vitals (hp=41 hit-dice=1/5) into one PC's sheet
   gm-apprentice-publish update-pin [options] Repoint this site at the newest installed build tool
   gm-apprentice-publish manifest <cmd>       Compare the publish manifest with the vault, or update it
   gm-apprentice-publish leaks <cmd>          Check the built player site for hidden text (list, check, accept, prune, settle)
@@ -166,6 +167,8 @@ source only — no rebuild, no deploy.
 `,
   sheet: `
 gm-apprentice-publish sheet show --pc <name> [--player-safe] [--json] [--config <path>]
+gm-apprentice-publish sheet set --pc <name> key=value [key=value…] [--dry-run] [--config <path>]
+gm-apprentice-publish sheet set --vault <dir> --file <note> --stdin key=value [key=value…]
 
 Prints one PC's character sheet from the vault. The default view is the raw
 source file, exactly as it sits on disk. --player-safe prints the sheet with
@@ -181,6 +184,31 @@ the GM.
   --json             Emit { pc, sourcePath, playerSafe, frontmatter, markdown }
   --config <path>    Path to vault.config.json (default: ./vault.config.json)
   --help, -h         Show this help
+
+sheet set writes the values given into the PC's sheet with the writers flush
+uses, and prints flush's per-PC line ("✓ Brannoc — HP (Current) 34→41"). On a
+D&D or CoC sheet only cells it already has change: a key whose row is missing is
+reported ("no writable Temp HP row on this sheet") and left alone. GURPS HP and
+FP go to Current Status's **HP:**/**FP:** lines, added if missing, as flush does. An unknown key, or a
+value of the wrong shape, writes nothing. Keys by system:
+
+  D&D 5e     hp, temp, exhaustion (0-6), conditions (comma list, or none),
+             inspiration (yes/no), hit-dice (spent or spent/max; a sheet
+             with two Hit Dice rows names them hit-dice-d10, hit-dice-d6),
+             death-saves (made/failed)
+  CoC 7e     hp, mp, luck, san, and yes/no: temporary-insanity,
+             indefinite-insanity, major-wound, unconscious, dying
+  Regency    the CoC keys and rep (Current Reputation)
+  GURPS      hp, fp (the **HP:**/**FP:** lines in Current Status)
+
+Pathfinder and Forged in the Dark have no live sheet to write.
+
+  --dry-run, -n      Print the same lines, write nothing
+  --vault <dir>      With --file and --stdin: the note's text comes on stdin and
+                     goes back as JSON { pc, markdown, changed, lines }; nothing
+                     is written (vault-write batch's sheet block)
+  --file <note>      The PC note, relative to --vault
+  --stdin            Read the note from stdin (needs --vault and --file)
 `,
   relationships: `
 gm-apprentice-publish relationships words [--vault <path>] [--json]
@@ -359,10 +387,11 @@ excluded versus missing is the GM's call.
                      folder the site leaves out is listed apart: its file is
                      there, and --prune keeps it.
   manifest apply [--publish <path>]... [--exclude "<path>=<reason>"]...
-                 [--decide <path>]... [--prune] [--config <path>] [--vault <dir>]
-                 [--json]
+                 [--decide <path>]... [--prune] [--prune-path <path>]...
+                 [--config <path>] [--vault <dir>] [--json]
                      Move paths between the three sections and rewrite the file.
-                     --prune drops entries with no file on disk. A path that
+                     --prune drops entries with no file on disk; --prune-path
+                     drops that one entry, only if its file is gone. A path that
                      matches no vault file is an error and nothing is written.
                      --vault (diff and apply): read and write this vault's
                      manifest through the site's rules, as doctor --site --vault
@@ -408,7 +437,10 @@ excluded versus missing is the GM's call.
                      reason (no Wrap-Up, Wrap-Up not reviewed yet, Excluded
                      or not publishing, or a site pinned to a tool too old
                      to withhold the body) and not ticked: that is the GM's
-                     call (manifest apply). Leaves Excluded entries alone.
+                     call (manifest apply). Never ticks an Excluded entry;
+                     a played session whose index is Excluded is listed
+                     as unclear, with \`manifest apply --decide\` as the
+                     way out.
                      Needs a publish list; without one it does
                      nothing. --session <index> (vault-relative) handles
                      just that session; --include-unreviewed (only with
@@ -595,6 +627,9 @@ change what the site shows:
   MOMENT_KIND_UNKNOWN
                   a Memorable Moments tag (#moment/<tag>) that names none of
                   the five kinds; the moment shows with no kind
+  UNFILLED_PLACEHOLDER
+                  a paragraph or list item that is only a template placeholder
+                  ({...}); it is left off the page, with any heading it emptied
   TOHIT_UNREAD    a row of a GURPS PC sheet the to-hit calculator cannot fully
                   read (a skill not in the Skills table, a bare number, a
                   technique that finds no skill); a row it reads but that is
@@ -986,10 +1021,55 @@ if (command === 'flush') {
   return;
 }
 
+if (command === 'sheet' && args[1] === 'set') {
+  // key=value words are the values; everything else is a flag. A flag's own value is
+  // never read as a pair (`--pc a=b` names a PC).
+  const VALUE_FLAGS = { '--pc': 'pc', '--vault': 'vault', '--file': 'file' };
+  const rest = args.slice(2);
+  const pairs = [];
+  const flagArgs = [];
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i];
+    if (a === '--config' || Object.prototype.hasOwnProperty.call(VALUE_FLAGS, a)) {
+      flagArgs.push(a);
+      if (i + 1 < rest.length) flagArgs.push(rest[++i]);
+    } else if (!a.startsWith('-') && a.includes('=')) pairs.push(a);
+    else flagArgs.push(a);
+  }
+  const parsed = parseSubcommandArgs(flagArgs, { '--dry-run': 'dryRun', '-n': 'dryRun', '--stdin': 'stdin' }, VALUE_FLAGS);
+  if (parsed.error) {
+    console.error(`Error: ${parsed.error}`);
+    printSubcommandHelp('sheet');
+    process.exit(1);
+  }
+  const f = parsed.flags;
+  const usage = (msg) => { console.error(`Error: ${msg}`); printSubcommandHelp('sheet'); process.exit(1); };
+  if (f.stdin && !(f.vault && f.file)) usage('sheet set --stdin needs --vault <dir> and --file <note>');
+  if ((f.vault || f.file) && !f.stdin) usage('sheet set --vault and --file go with --stdin; otherwise name the PC with --pc');
+  if (f.vault && (f.pc || parsed.configGiven)) usage('sheet set takes --pc (with --config) or --vault with --file, not both');
+  if (!f.vault && !f.pc) usage('sheet set needs --pc <name>');
+  const { runSheetSet } = require('../lib/sheet-set.js');
+  const go = (stdinText) => runSheetSet({
+    configPath: parsed.configPath, pc: f.pc, vault: f.vault, file: f.file,
+    pairs, dryRun: !!f.dryRun, stdinText,
+  });
+  const run = f.stdin
+    ? new Promise((resolve, reject) => {
+      let text = '';
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', (c) => { text += c; });
+      process.stdin.on('end', () => resolve(text));
+      process.stdin.on('error', reject);
+    }).then(go)
+    : go(undefined);
+  run.then(exitAfterFlush).catch(failAfterFlush);
+  return;
+}
+
 if (command === 'sheet') {
   const verb = args[1];
   if (verb !== 'show') {
-    console.error(verb ? `Error: Unknown sheet command: ${verb}` : 'Error: sheet needs a command (show)');
+    console.error(verb ? `Error: Unknown sheet command: ${verb}` : 'Error: sheet needs a command (show, set)');
     printSubcommandHelp('sheet');
     process.exit(1);
   }
@@ -1125,7 +1205,7 @@ if (command === 'manifest') {
     // one the site's vaultPath names (explain --all takes it for the same reason).
     verb === 'publish-played' ? { '--vault': 'vault', '--session': 'session' }
       : verb === 'rename' ? { '--vault': 'vault', '--from': 'from', '--to': 'to' } : { '--vault': 'vault' },
-    verb === 'apply' ? { '--publish': 'publish', '--exclude': 'exclude', '--decide': 'decide' }
+    verb === 'apply' ? { '--publish': 'publish', '--exclude': 'exclude', '--decide': 'decide', '--prune-path': 'prunePaths' }
       : verb === 'rename' ? { '--name': 'names' }
         : verb === 'never-publish' ? { '--path': 'paths' } : {},
   );
@@ -1153,6 +1233,7 @@ if (command === 'manifest') {
     untyped: !!parsed.flags.untyped,
     write: !!parsed.flags.write,
     prune: !!parsed.flags.prune,
+    prunePaths: parsed.flags.prunePaths,
     dryRun: !!parsed.flags.dryRun,
     json: !!parsed.flags.json,
   })

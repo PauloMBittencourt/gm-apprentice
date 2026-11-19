@@ -23,12 +23,12 @@ tags: []
 
 ## Session Intent
 
-[What you want this session to be about, and whose moment it is. One or
-two sentences, in your words.]
+[What's on the table this session and where the pressure is, in a line,
+in your words.]
 
 ## Session Overview
 
-[What this session is about dramatically, in a short synopsis.]
+[The situation going in, in a short synopsis: what's on the table, never what the players will do.]
 
 ## GM Notes
 
@@ -44,7 +44,7 @@ two sentences, in your words.]
 [What follows from last session.]
 
 #### Salvageable Prep
-[Unplayed prep: dropped / recycled / must-happen.]
+[Unplayed prep: dropped / recycled / still on the table.]
 
 #### GM Decisions
 [Resolved decisions with outcomes, one at a time.]
@@ -79,7 +79,6 @@ Checklists for improvisation, not prose to read. Every line is a bullet,
 a table row or a one-line label; the only prose is the read-aloud quote.
 
 ### Scene 1: [Title]
-**Type:** investigation | social | combat | chase | transition | horror | downtime | other
 **Situation:** *(required)* One line. What is happening when the scene
 opens — a thing in motion, not a theme.
 **Starts it:** *(required)* One line. The named NPC or household schedule
@@ -105,7 +104,7 @@ from *this* PC.
 <!-- Add Scene 2, Scene 3 ... with the same structure. A routing or hub
      scene (a menu of where the party is and what is available, not a
      scene) needs neither required label. Mark it with "(routing)" or
-     "(hub)" in its title, `Scene 0`, or `**Type:** transition`. -->
+     "(hub)" in its title, or call it `Scene 0`. -->
 
 ### [[Scene Note Title]]
 **Purpose:** A scene already written as a scene note: one line on why.
@@ -147,7 +146,7 @@ none, write "No handouts or props."]
 
 ## Spotlight Forecast
 
-[Per-PC role and moment; none left blank.]
+[Per-PC hook on the table: a place, person or thread that pulls on them; none left blank.]
 
 ## Open Questions
 

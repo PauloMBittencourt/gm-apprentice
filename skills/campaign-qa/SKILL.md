@@ -51,14 +51,16 @@ wrong vault path; ask for it.
 - `_meta/entity-types.md`, `_meta/relationship-types.md` — schema.
 - `_Campaign/Timeline.md` (or `campaign-timeline.md` at the root)
   — master timeline.
-- `_Campaign/Player Characters.md` — PC
-  roster.
+- `gma vault-check <vault> active-pcs --all` — the PC roster: every
+  PC note with its player and status.
 - `Chapters/` — session notes, scenes, prep plans.
 - `_inbox/` (vault-ingest staging) and `_midwife/` (creative
   drafts) — ignore in every mode; never flag them.
 
 **Schema:** field, enum and legacy-key checks come from
-`gma vault-check <vault> frontmatter`; a type's fields and place in the
+`gma vault-check <vault> frontmatter`; a value that is only escaped quotes
+(`voice: \"\"`, a four-character string and not empty) is one of its
+warnings (the Escaped Quotes fix below); a type's fields and place in the
 hierarchy from `gma schema-rules show <type>`; canon states are in
 `shared/canon-status.md`.
 
@@ -75,6 +77,11 @@ follow-up recommendations.
   on. Never silently fix, even obvious errors — the GM may have a
   reason (unreliable narrator, misdirection, planned retcon).
 - Thread Tidy closes threads a note explicitly ends, and moves duplicates, without asking; it reports each one, and asks about nothing else.
+- Escaped Quotes: a frontmatter value that is only `\"\"` is an empty value
+  written wrong, never a choice. `gma vault-check <vault> frontmatter --fix`
+  rewrites each to `""`; run it, report the notes it changed, ask nothing.
+  In a folder or chapter audit add `--folder "<the selected folder>"`; the
+  whole vault only for a whole-vault audit.
 - **Severity:**
   - **Critical** — visibly breaks at the table (dead NPC alive,
     timeline impossibility players can spot).
@@ -100,7 +107,7 @@ Read the named check file when the mode runs.
 - Dead/retired entities referenced as active
 - AUTHORITATIVE entries contradicted by newer content
 - NPC profiles that don't match their session appearances
-- PC roster mismatches (roster vs session plans)
+- PC mismatches (a PC note's player or status vs session plans)
 - Session-plan facts not traceable to entity files (canon
   fabrication)
 - PC `## Current Status` consistency: an active PC (not
@@ -206,6 +213,12 @@ One character with an NPC note and a PC note, from `gma vault-check
 <vault> npc-pairs`. On the GM's yes, one pair at a time, the row's
 `npc-merge` command makes them one note.
 
+### NPC Stats — `references/checks/npc-stats.md`
+
+NPCs met in play with no stat block, from `gma vault-check <vault>
+npc-stats --played`. Each offered as a build through ttrpg-expert, shown
+for the GM's yes.
+
 ### Open Spoilers — `references/checks/open-spoilers.md`
 
 Every `<!-- spoiler -->` marker still in the vault, listed for
@@ -233,7 +246,7 @@ Run in order, reading each check file as you go: Canon Audit →
 Timeline Validation → Name Similarity → Clue Redundancy → Graph
 Health → Tone Words → D&D Sheets (D&D vaults only) → Legacy Canon
 Field Repair → Stale DRAFT Detection → Wrap-Up Conformance → Chapter Notes
-→ NPC/PC Pairs → Site Faults (vaults with a site only) → Settings → World Consistency (if
+→ NPC/PC Pairs → NPC Stats → Site Faults (vaults with a site only) → Settings → World Consistency (if
 `_World/` exists) → Open Spoilers. Deduplicate across checks; present one report
 grouped by severity (Critical, Warning, Info), not by mode.
 

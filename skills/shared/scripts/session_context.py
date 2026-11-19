@@ -60,12 +60,11 @@ Keeper Checklist items and Open Questions already settled.
 `--arcs` replaces the default bundle with each active PC's durable
 arc material instead: `## Background` and `## GM Notes` (the
 bundle's `## Current Status` block is not repeated), plus a
-chapter-scoped spotlight history built from every earlier Plan's
-`## Spotlight Forecast` table, with sessions since the PC last
-carried the B- and C-plot. A forecast section has three states, kept
-apart because they mean different things: absent, present but written
-as prose (listed for direct reading, never counted as evidence of a
-spotlight drought), and a real table.
+chapter-scoped spotlight history built from every earlier Wrap-Up's
+PC Carry-Forward Moment and MAJOR lines (what play gave each PC, never
+what a Plan forecast), with sessions since the PC's last MAJOR beat
+and last moment. A Wrap-Up that records no Moment line at all is listed
+for direct reading, never counted as evidence of a spotlight drought.
 
 `--prep` is a prep run's opening read in one call: the version check's
 verdict, the `--brief` bundle, the reconcile scan of the Wrap-Up just
@@ -106,6 +105,7 @@ import argparse
 import re
 import subprocess
 import sys
+import unicodedata
 from collections.abc import Callable
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -126,12 +126,13 @@ from vaultlib import (GM_MARKER_RE, is_active_pc, marker_re,  # noqa: F401
                       entity_type,
                       atx_title, fenced_headings, find_section_lines,
                       h3_blocks, line_headings, nested_mapping,
-                      normalize, raw_frontmatter, section,
+                      link_name, normalize, raw_frontmatter, section,
                       session_ref_number, word_count)
 from vaultlib import LABEL_RE as _LABEL_RE
 from vaultlib import BULLET_RE, markers_in
 from vaultlib import bullets as _bullets
-from vaultlib import alias_split, fence_step, link_name, split_paused
+from vaultlib import (alias_split, fence_step, link_aliases, link_name,
+                      split_paused)
 from vaultlib import vault_files as _vault_files
 
 
@@ -148,6 +149,24 @@ def overview_of(files) -> tuple[str, str, dict] | None:
     files = list(files)
     rel = campaign_overview((r, fm) for r, _t, fm in files)
     return next((f for f in files if f[0] == rel), None)
+
+
+_HINT_LINE_RE = re.compile(r"^\s*\{[^{}]*\}\s*$")
+
+
+def house_rules_of(files) -> str:
+    """The Campaign Overview's `## House Rules` text as written, or ""."""
+    found = overview_of(files)
+    text = section(body_of(found[1]), "House Rules") if found else None
+    # A template's `{hint}` line left in place is no rule.
+    return "\n".join(line for line in (text or "").splitlines()
+                     if not _HINT_LINE_RE.match(line)).strip()
+
+
+def house_rules_block(files, heading: str) -> str:
+    """The House Rules block under `heading`, or "" when there are none."""
+    rules = house_rules_of(files)
+    return f"{heading}\n{rules}" if rules else ""
 
 
 def stem_of(entry) -> str:
@@ -545,6 +564,208 @@ def threads_related(a: str, b: str) -> bool:
     return extra >= need and extra * 2 >= smaller
 
 
+_NAMED_TYPES = frozenset({"npc", "creature", "faction", "organization",
+                          "location", "item", "document", "prop"})
+_GIVEN_NAME_TYPES = frozenset({"npc", "creature"})
+
+
+# A word, for finding runs of capitalised ones (any script's capitals).
+_WORD_RE = re.compile(r"[^\W\d_][\w'\u2019]*")
+
+
+def _capital_runs(text: str) -> list[list[str]]:
+    """Each run of two or more capitalised words with only spaces between
+    them: "Widow's Stair", "The Pale Road", "Ébène Noire"."""
+    runs: list[list[str]] = []
+    run: list[str] = []
+    end = -1
+    for m in _WORD_RE.finditer(text):
+        if m.group(0)[0].isupper() and (run and not text[end:m.start()].strip(" \t")
+                                        or not run):
+            run.append(m.group(0))
+        else:
+            if len(run) >= 2:
+                runs.append(run)
+            run = [m.group(0)] if m.group(0)[0].isupper() else []
+        end = m.end()
+    if len(run) >= 2:
+        runs.append(run)
+    return runs
+
+
+# The word that follows a given name, past any particles ("de", "van der").
+_NEXT_NAME_RE = re.compile(
+    r"[ \t]+(?:(?:de|du|des|da|di|del|della|von|van|der|den|la|le|of|bin|ibn|al)"
+    r"[ \t]+)*([^\W\d_][\w'\u2019-]*)")
+
+
+class NameIndex:
+    """The names the vault knows, for the last matching tier (#718): a
+    thread and a Wrap-Up line that name the same person, place or thing
+    are about it, however each is worded.
+
+    A name is a note's title (file stem) or `aliases:` / `gm_aliases:`
+    entry. A name of two words or more, and any `[[link]]` target, matches
+    whatever its case. A single word (a one-word title or alias, or the
+    given name taken from an npc or creature title: "Durgan" for "Durgan
+    Flintmere", when no other note has it) matches only as written, so
+    "Order" is not "order" nor "Captain" "the captain". Only the notes of a
+    person, place or thing count (not PCs, who are in every thread; not
+    sessions, plans or scenes). A name two notes share names neither. A
+    trailing `'s` is allowed. An entity that every Wrap-Up names, with
+    three or more of them, is not evidence (the home town, the party's
+    faction) and is left out. A phrase of two or more capitalised words
+    that no note is named for ("the Widow's Stair") counts as a name too
+    (#733). `lines` holds each in-scope Wrap-Up's
+    Unresolved Threads, PC Carry-Forward and Pending Consequences bullets;
+    `mentions` is asked once per text."""
+
+    def __init__(self, files, chapter=None):
+        owners: dict[str, set[str]] = {}    # casefolded full name -> notes
+        self._any_name: set[str] = set()    # every note's names, any type
+        words: dict[str, set[str]] = {}     # single word, as written -> notes
+        given: dict[str, set[str]] = {}     # npc/creature title word
+        self._own: dict[str, set[str]] = {}  # note -> its name words, casefolded
+        blank: set[str] = set()     # names a phrase must not be built from
+        for rel, _text, fm in files:
+            kind = entity_type(fm)
+            names_here = [unicodedata.normalize("NFC", n.replace("_", " ")).strip()
+                          for n in [Path(rel).stem, *link_aliases(fm)]]
+            self._any_name.update(normalize(n) for n in names_here if n)
+            blank.update(n for n in names_here if " " in n)
+            if kind == "pc":     # a PC's given name alone is no phrase either
+                blank.update(n.split()[0] for n in names_here
+                             if len(n.split()) > 1 and len(n.split()[0]) >= 3)
+            if kind not in _NAMED_TYPES:
+                continue
+            stem = unicodedata.normalize(
+                "NFC", Path(rel).stem.replace("_", " ").strip())
+            for name in [stem, *link_aliases(fm)]:
+                name = unicodedata.normalize("NFC", name).strip()
+                if not name:
+                    continue
+                owners.setdefault(normalize(name), set()).add(rel)
+                self._own.setdefault(rel, set()).update(
+                    w.casefold() for w in name.split())
+                if (len(name.split()) == 1 and len(name) >= 3
+                        and name.casefold() not in _THREAD_STOP):
+                    words.setdefault(name, set()).add(rel)
+            parts = stem.split()
+            if kind in _GIVEN_NAME_TYPES and len(parts) > 1:
+                for w in parts:
+                    if (len(w) >= 3 and w[:1].isupper()
+                            and w.casefold() not in _THREAD_STOP):
+                        given.setdefault(w, set()).add(rel)
+        # A given name only (not a one-word title or alias): "Dorothea" of
+        # "Miss Dorothea Bexley" is not "Dorothea de Courlande" (#734).
+        self._given = {w for w in given if w not in words}
+        for w, rels in given.items():
+            words.setdefault(w, set()).update(rels)
+        self._links = {n: next(iter(r)) for n, r in owners.items()
+                       if len(r) == 1}
+        self._words = {n: next(iter(r)) for n, r in words.items()
+                       if len(r) == 1}
+        multi = sorted((n for n in self._links if " " in n),
+                       key=len, reverse=True)
+        # A full name two notes share names neither, and its words must
+        # not name one of them either: those spans are blanked first.
+        shared = sorted((n for n, r in owners.items()
+                         if len(r) > 1 and " " in n), key=len, reverse=True)
+        single = sorted(self._words, key=len, reverse=True)
+        edge = (r"(?<![^\W_])(?:", r")(?:['\u2019]s)?(?![^\W_])")
+        self._multi_re = (re.compile(
+            edge[0] + "|".join(re.escape(n) for n in multi) + edge[1],
+            re.IGNORECASE) if multi else None)
+        self._word_re = (re.compile(
+            edge[0] + "|".join(re.escape(n) for n in single) + edge[1])
+            if single else None)
+        self._shared_re = (re.compile(
+            edge[0] + "|".join(re.escape(n) for n in shared) + edge[1],
+            re.IGNORECASE) if shared else None)
+        known = sorted(blank, key=len, reverse=True)
+        self._known_re = (re.compile(
+            edge[0] + "|".join(re.escape(n) for n in known) + edge[1],
+            re.IGNORECASE) if known else None)
+        self._cache: dict[str, set[str]] = {}
+        self.lines: list[tuple[int, list[str]]] = []
+        for n, text in _scoped_wrap_ups(files, chapter):
+            bullets: list[str] = []
+            for level, title in ((4, "Unresolved Threads"),
+                                 (3, "PC Carry-Forward"),
+                                 (4, "Pending Consequences")):
+                block = _heading_block(text, level, title)
+                if block:
+                    bullets.extend(_bullets(block))
+            self.lines.append((n, bullets))
+        self._everywhere: set[str] = set()
+        if len(self.lines) >= 3:
+            per = [set().union(*(self.mentions(b) for b in bullets))
+                   for _n, bullets in self.lines]
+            self._everywhere = set.intersection(*per)
+            self._cache.clear()
+
+    def _other_person(self, m: re.Match[str], bare: str) -> bool:
+        """Whether the given name `m` starts someone else's full name: the
+        capitalised word after it (past a particle: de, von, van, of...)
+        is none of the note's own name words."""
+        after = _NEXT_NAME_RE.match(bare, m.end())
+        owner = self._words.get(m.group(0))
+        return bool(after and owner and after.group(1)[0].isupper()
+                    and after.group(1).casefold() not in self._own.get(owner, set()))
+
+    def mentions(self, text: str) -> set[str]:
+        """The notes `text` names (by link target, alias or bare name), and
+        `phrase:<words>` for each proper-noun phrase no note is named."""
+        if text in self._cache:
+            return self._cache[text]
+        text_nfc = unicodedata.normalize("NFC", text)
+        found: set[str] = set()
+        for m in _THREAD_LINK_RE.finditer(text_nfc):
+            name = normalize(link_name(m.group(1)))
+            owner = (self._links.get(name)
+                     or self._links.get(re.sub(r"^(the|a|an) ", "", name)))
+            if owner:
+                found.add(owner)
+        bare = re.sub(r"\[\[([^\]|]+)(?:\|[^\]]+)?\]\]", r"\1", text_nfc)
+        if self._shared_re:
+            bare = self._shared_re.sub(lambda m: " " * len(m.group(0)), bare)
+        for rx in (self._multi_re, self._word_re):
+            for m in (rx.finditer(bare) if rx else ()):
+                # The whole match first: a title may end in 's ("St James's").
+                if (rx is self._word_re and m.group(0) in self._given
+                        and self._other_person(m, bare)):
+                    continue
+                for name in (m.group(0), re.sub(r"['\u2019]s$", "", m.group(0))):
+                    owner = (self._links.get(normalize(name)) if rx is
+                             self._multi_re else self._words.get(name))
+                    if owner:
+                        found.add(owner)
+                        break
+        # A proper-noun phrase of two or more capitalised words that no
+        # note is named ("the Widow's Stair", described inside another
+        # note) is evidence too. A note's own name is the tiers above (or,
+        # a PC's or a shared name, deliberately none).
+        # Known names are taken out first, so "Ask Ilsa Marrow" (a PC) builds
+        # no phrase. A run's first word may only start the sentence ("Visit
+        # Pale Road"), so the run without it counts as well.
+        plain = (self._known_re.sub(lambda m: " " * len(m.group(0)), bare)
+                 if self._known_re else bare)
+        for run in _capital_runs(plain):
+            if run[0] in ("The", "A", "An"):
+                run = run[1:]
+            for words in (run, run[1:]):
+                if len(words) < 2:
+                    continue
+                whole = " ".join(words)
+                phrase = re.sub(r"['\u2019]s$", "", whole)
+                if (normalize(whole) not in self._any_name
+                        and normalize(phrase) not in self._any_name):
+                    found.add("phrase:" + normalize(phrase))
+        found -= self._everywhere
+        self._cache[text] = found
+        return found
+
+
 _POINTER_RE = re.compile(r"\[\[([^\[\]|#]+)(?:[#|][^\[\]]*)?\]\]")
 
 
@@ -853,7 +1074,7 @@ def _lead_key(text: str) -> str | None:
     return None if vw.SESSION_ENTRY_RE.match(key) else key
 
 
-def _match(thread: str, wrap_ups):
+def _match(thread: str, wrap_ups, names: NameIndex | None = None):
     """(sessions, mark, claimed): `claimed` holds the (session, bullet)
     Unresolved bullets a match took: every close match (a likely wording
     or an equal bold lead, `threads.lead`, so a thread rewritten in
@@ -884,6 +1105,11 @@ def _match(thread: str, wrap_ups):
         if related is not None or any(threads_related(thread, b)
                                       for b in carry):
             hits.append(n)
+    if not hits and names is not None:
+        theirs = names.mentions(thread)
+        if theirs:
+            hits = [n for n, bullets in names.lines
+                    if any(theirs & names.mentions(b) for b in bullets)]
     return hits, ("~" if hits else ""), claimed
 
 
@@ -1086,6 +1312,7 @@ def thread_report(files, current: int, chapter, vault: Path,
     """
     lines = ["===== Threads ====="]
     wrap_ups = wrap_up_threads(files, chapter)
+    names = NameIndex(files, chapter)
 
     not_playing = out_of_play(vault)
     stale_after = setting_or_builtin(vault, "vault.stale_after_sessions")
@@ -1099,10 +1326,10 @@ def thread_report(files, current: int, chapter, vault: Path,
 
     def tags(thread: str) -> str:
         nonlocal tentative
-        hits, mark, _claimed = _match(thread, wrap_ups)
+        hits, mark, _claimed = _match(thread, wrap_ups, names)
         if not hits:
             return ("first=?\tlast=?\tage=?\t"
-                    "(not in any wrap-up — check it is still live)")
+                    "(no match found in a wrap-up — check it is still live)")
         tentative = tentative or mark == "~"
         first, last = min(hits), max(hits)
         age = current - last
@@ -1168,103 +1395,54 @@ def thread_report(files, current: int, chapter, vault: Path,
 # --arcs helpers
 # --------------------------------------------------------------------------
 
-SPOTLIGHT_TITLE = "Spotlight Forecast"
-
-_SEPARATOR_CELL_RE = re.compile(r"^[-:]+$")
 _TRAILING_PAREN_RE = re.compile(r"\s*\([^)]*\)\s*$")
 _WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
+_PC_HEADING_RE = re.compile(r"^####[ \t]+(.+?)[ \t#]*$", re.M)
+_MOMENT_RE = re.compile(r"^[ \t]*[-*+][ \t]+\*\*Moment[ \t]*:?[ \t]*\*\*:?(.*)$",
+                        re.I | re.M)
+_MAJOR_RE = re.compile(r"^[ \t]*[-*+][ \t]+\*\*MAJOR\b", re.M)
 
 
-def _row_cells(line: str) -> list[str]:
-    r"""Cells of a `|`-delimited table row. Splits only on pipes that are
-    a real cell boundary: an escaped `\|` and the alias pipe inside
-    `[[Target|Alias]]` stay inside their cell. The table contract forbids
-    both forms, but a plan reaches `--arcs` before `vault_check` has ever
-    seen it, and a mis-split PC cell silently reports the wrong drought.
-
-    An unbalanced `[[` would otherwise swallow the rest of the row, which
-    is the same silent mis-read from the other side, so a row that ends
-    mid-wikilink falls back to the naive split."""
-    inner = line.strip()
-    if inner.startswith("|"):
-        inner = inner[1:]
-    if inner.endswith("|") and not inner.endswith("\\|"):
-        inner = inner[:-1]
-    cells: list[str] = []
-    buf: list[str] = []
-    depth = 0
-    i = 0
-    while i < len(inner):
-        if inner.startswith("\\|", i):
-            buf.append("\\|")
-            i += 2
-        elif inner.startswith("[[", i):
-            depth += 1
-            buf.append("[[")
-            i += 2
-        elif inner.startswith("]]", i):
-            depth = max(0, depth - 1)
-            buf.append("]]")
-            i += 2
-        elif inner[i] == "|" and depth == 0:
-            cells.append("".join(buf).strip())
-            buf = []
-            i += 1
-        else:
-            buf.append(inner[i])
-            i += 1
-    cells.append("".join(buf).strip())
-    if depth != 0:
-        return [c.strip() for c in inner.split("|")]
-    return cells
-
-
-def spotlight_rows(plan_body: str) -> list[tuple[str, str]] | None:
-    """(pc_cell, role) per data row of the first table under
-    `## Spotlight Forecast`; None when the section is absent. Only the
-    first `|`-delimited table is read: collection starts at the first
-    `|` line and stops at the first non-`|` line seen after that (a
-    blank line or prose ends the table), so a second table later in
-    the same section is never ingested. pc_cell = first cell with
-    `[[Target|Alias]]` reduced to its target, `**`, `[[`, `]]` removed
-    and a trailing `(...)` dropped, stripped.
-    role = "B" if "b-plot" in the row (casefold) else "C" if "c-plot"
-    else "A" if "a-plot" else "-". A share percentage in the row is not
-    read: it was an estimate, not a fact. Header and separator rows
-    skipped."""
-    block = section(plan_body, SPOTLIGHT_TITLE)
-    if block is None:
+def moment_rows(wrap_text: str) -> list[tuple[str, str]] | None:
+    """(pc_name, role) per `#### [[PC]] (Player)` block under a Wrap-Up's
+    `### PC Carry-Forward`: what the session gave each PC, as the wrap-up
+    recorded it. role = "MAJOR" with a `**MAJOR —**` bullet, else "none"
+    when its `**Moment:**` line starts with "none", else "moment"; a block
+    with neither line is left out. None when the Wrap-Up records no Moment
+    or MAJOR line at all (no PC Carry-Forward, or one written before
+    moments were recorded): that is not evidence of a drought.
+    pc_name = the heading with `[[Target|Alias]]` reduced to its target,
+    `**`, `[[`, `]]` removed and a trailing `(...)` dropped."""
+    block = _heading_block(wrap_text, 3, "PC Carry-Forward")
+    if not block or not (_MOMENT_RE.search(block) or _MAJOR_RE.search(block)):
         return None
-    table_lines: list[str] = []
-    started = False
-    for ln in block.splitlines():
-        if ln.strip().startswith("|"):
-            table_lines.append(ln)
-            started = True
-        elif started:
-            break
+    heads = list(_PC_HEADING_RE.finditer(block))
     rows: list[tuple[str, str]] = []
-    for line in table_lines[1:]:  # skip header row
-        cells = _row_cells(line)
-        if cells and all(_SEPARATOR_CELL_RE.match(c) for c in cells if c):
-            continue  # separator row
-        if not cells or not cells[0]:
+    for i, m in enumerate(heads):
+        body = block[m.end():heads[i + 1].start() if i + 1 < len(heads)
+                     else len(block)]
+        name = _WIKILINK_RE.sub(lambda w: w.group(1), m.group(1))
+        name = name.replace("**", "").replace("[[", "").replace("]]", "")
+        name = _TRAILING_PAREN_RE.sub("", name).strip()
+        moment = _MOMENT_RE.search(body)
+        if _MAJOR_RE.search(body):
+            role = "MAJOR"
+        elif moment is None:
             continue
-        first = _WIKILINK_RE.sub(lambda m: m.group(1), cells[0])
-        first = (first.replace("**", "").replace("[[", "")
-                 .replace("]]", "").replace("\\|", "|"))
-        first = _TRAILING_PAREN_RE.sub("", first).strip()
-        low = line.casefold()
-        if "b-plot" in low:
-            role = "B"
-        elif "c-plot" in low:
-            role = "C"
-        elif "a-plot" in low:
-            role = "A"
+        elif _NONE_MOMENT_RE.match(
+                moment.group(1).strip(" \t*_\"'{}").casefold()):
+            role = "none"
         else:
-            role = "-"
-        rows.append((first, role))
+            role = "moment"
+        rows.append((name, role))
     return rows
+
+
+# The template's "none" for a PC nothing touched tonight: the word alone, or
+# with a reason after it ("none (absent)", "none — off sick"). A sentence
+# that starts with the word ("None of the guards saw through her") is a
+# moment.
+_NONE_MOMENT_RE = re.compile(r"none(?:[\s\"'*_}.]*$|\s*[(\u2014\u2013:;,-])")
 
 
 def pc_matches(cell: str, rel: str, fm: dict) -> bool:
@@ -1422,29 +1600,23 @@ def arcs_report(files, chapter, upcoming: int, vault: Path,
       {section or "(no ## Background section)"}
       ## GM Notes
       {section or "(no ## GM Notes section)"}
-      Spotlight history (chapter-scoped, from ## Spotlight Forecast tables):
-        Session 6: B
-        Session 7: (no row for this PC)
-      Sessions since last B-plot: 2 (Session 6)     or  never (in N plans read)
-      Sessions since last C-plot: never (in 2 plans read)
+      Spotlight history (chapter-scoped, from the Wrap-Ups' Moment lines):
+        Session 6: MAJOR
+        Session 7: (no Moment line for this PC)
+      Sessions since last MAJOR beat: 2 (Session 6)  or  never (in N wrap-ups read)
+      Sessions since last moment: 2 (Session 6)
 
-    A Plan's `## Spotlight Forecast` has three states, and they are not
-    interchangeable — 6 of 9 chapter plans on the campaign this was
-    measured against write the forecast as prose, and folding those into
-    "no row for this PC" reported a spotlight drought that did not exist:
-      - section absent      -> named under `Plans without a
-                               ## Spotlight Forecast: ...`;
-      - section present but carrying no table rows -> named under `Plans
-                               whose ## Spotlight Forecast has no table
-                               (read those sections directly): ...`, with
-                               no per-PC line and no place in the
-                               `(in N plans read)` denominator;
-      - table with rows     -> one `Session N: role` line per PC,
-                               `(no row for this PC)` where the PC is
-                               genuinely absent from a table that exists.
-    Both buckets print once, after the PCs (`(none)` when empty).
+    Spotlight history is what play gave each PC, as each Wrap-Up's
+    `### PC Carry-Forward` recorded it (`moment_rows`), never what a
+    Plan forecast. A MAJOR beat is also a moment; a Moment line of
+    "none" is neither. A Wrap-Up that records no Moment or MAJOR line
+    at all (one written before moments were recorded) is named once,
+    after the PCs, under `Wrap-Ups with no Moment lines (read those
+    directly): ...` (`(none)` when empty), with no per-PC line and no
+    place in the `(in N wrap-ups read)` denominator: counting it would
+    report a spotlight drought that did not exist.
 
-    Plans = every type: session-plan with a parsable session number <
+    Wrap-Ups = every wrap-up type with a parsable session number <
     upcoming, prefer_chapter semantics, sorted by number.
     "Sessions since" = upcoming - N.
 
@@ -1452,33 +1624,37 @@ def arcs_report(files, chapter, upcoming: int, vault: Path,
     prep plan used one (27 runs, 2026-11-10); `--arcs` prints it."""
     lines = [f"===== PC Arcs — Sessions before {upcoming} ====="]
 
-    plan_files = [(rel, text, fm) for rel, text, fm in files
-                  if fm.get("type") == "session-plan"]
-    numbers = sorted({n for rel, text, fm in plan_files
+    wrap_files = [(rel, text, fm) for rel, text, fm in files
+                  if entity_type(fm) in WRAP_UP_TYPES]
+    numbers = sorted({n for rel, text, fm in wrap_files
                       if (n := session_ref_number(fm)) is not None
                       and n < upcoming})
 
-    plans: list[tuple[int, list[tuple[str, str]] | None]] = []
+    wraps: list[tuple[int, list[tuple[str, str]] | None]] = []
     for n in numbers:
-        candidates = [c for c in plan_files if session_ref_number(c[2]) == n]
+        candidates = [c for c in wrap_files if session_ref_number(c[2]) == n]
         picked = prefer_chapter(candidates, chapter)
         if picked is None:
             continue
-        plans.append((n, spotlight_rows(picked[1])))
+        wraps.append((n, moment_rows(picked[1])))
 
-    tables = [(n, rows) for n, rows in plans if rows]
-    prose_forecast = [n for n, rows in plans if rows == []]
-    no_section = [n for n, rows in plans if rows is None]
+    recorded = [(n, rows) for n, rows in wraps if rows is not None]
+    unrecorded = [n for n, rows in wraps if rows is None]
 
     not_playing = out_of_play(vault)
     pcs = [(rel, text, fm) for rel, text, fm in files
            if is_active_pc(rel, fm, not_playing)]
 
-    def since(last: int | None, label: str) -> str:
+    def since(last: int | None, label: str, seen: int) -> str:
+        # Only a wrap-up with a row for this PC is evidence: one that does
+        # not name them says nothing about their spotlight.
+        if last is None and not seen:
+            return (f"Sessions since last {label}: unknown (no wrap-up read "
+                    f"has a Moment line for this PC)")
         if last is None:
-            return (f"Sessions since last {label}-plot: never "
-                     f"(in {len(tables)} plans read)")
-        return (f"Sessions since last {label}-plot: {upcoming - last} "
+            return (f"Sessions since last {label}: never "
+                    f"(in {seen} wrap-ups read)")
+        return (f"Sessions since last {label}: {upcoming - last} "
                 f"(Session {last})")
 
     for rel, text, fm in pcs:
@@ -1494,32 +1670,30 @@ def arcs_report(files, chapter, upcoming: int, vault: Path,
         lines.append("## GM Notes")
         lines.append(outlines.layered(gm, vault, rel, "GM Notes", text) if gm
                      else "(no ## GM Notes section)")
-        lines.append("Spotlight history (chapter-scoped, from "
-                     "## Spotlight Forecast tables):")
-        last_b: int | None = None
-        last_c: int | None = None
-        for n, rows in tables:
+        lines.append("Spotlight history (chapter-scoped, from the "
+                     "Wrap-Ups' Moment lines):")
+        last_major: int | None = None
+        last_moment: int | None = None
+        seen = 0
+        for n, rows in recorded:
             match = next((r for r in rows if pc_matches(r[0], rel, fm)), None)
             if match is None:
-                lines.append(f"  Session {n}: (no row for this PC)")
+                lines.append(f"  Session {n}: (no Moment line for this PC)")
                 continue
+            seen += 1
             role = match[1]
             lines.append(f"  Session {n}: {role}")
-            if role == "B":
-                last_b = n
-            elif role == "C":
-                last_c = n
-        lines.append(since(last_b, "B"))
-        lines.append(since(last_c, "C"))
+            if role == "MAJOR":
+                last_major = n
+            if role in ("MAJOR", "moment"):
+                last_moment = n
+        lines.append(since(last_major, "MAJOR beat", seen))
+        lines.append(since(last_moment, "moment", seen))
 
     lines.append("")
-    lines.append("Plans without a ## Spotlight Forecast: "
-                 + (", ".join(f"Session {n}" for n in no_section)
-                    if no_section else "(none)"))
-    lines.append("Plans whose ## Spotlight Forecast has no table (read "
-                 "those sections directly): "
-                 + (", ".join(f"Session {n}" for n in prose_forecast)
-                    if prose_forecast else "(none)"))
+    lines.append("Wrap-Ups with no Moment lines (read those directly): "
+                 + (", ".join(f"Session {n}" for n in unrecorded)
+                    if unrecorded else "(none)"))
 
     return "\n".join(lines)
 
@@ -2025,13 +2199,13 @@ def build_parser() -> argparse.ArgumentParser:
              "sections (the durable arc material the bundle does not "
              "carry — ## Current Status is already in the bundle and is "
              "not repeated) plus a chapter-scoped spotlight history "
-             "parsed from every earlier Plan's ## Spotlight Forecast "
-             "table (role A/B/C from the row text) with sessions since the PC last carried the "
-             "B- and C-plot. A forecast section is one of three states: "
-             "absent, present but prose (listed once for direct reading "
-             "— no per-PC row, and not counted in the 'plans read' "
-             "denominator), or a table. Arc stage is not a field: judge "
-             "it against the five-stage model from this evidence.")
+             "read from every earlier Wrap-Up's PC Carry-Forward "
+             "(MAJOR, moment or none per PC, from its MAJOR and Moment "
+             "lines) with sessions since the PC's last MAJOR beat and "
+             "last moment. A Wrap-Up with no Moment line at all is listed "
+             "once for direct reading (no per-PC row, and not counted in "
+             "the 'wrap-ups read' denominator). Arc stage is not a field: "
+             "judge it against the five-stage model from this evidence.")
     mode.add_argument(
         "--prep", action="store_true",
         help="a prep run's opening read in one call: the version verdict, "
@@ -2117,6 +2291,9 @@ def _bundle(argv: list[str] | None, outlines: Outlines) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 2
         print(report)
+        rules = house_rules_block(files, "===== House Rules =====")
+        if rules:
+            print(f"\n{rules}")
         block = paused_line_block(
             paused_scenes(args.vault, files),
             "===== Paused Scenes =====")
@@ -2170,6 +2347,9 @@ def _bundle(argv: list[str] | None, outlines: Outlines) -> int:
                 [p for p in paused_scenes(args.vault, files)
                  if not is_pointed_at(p.rel, pointed)],
                 "## Paused, not in this Plan")
+        rules = house_rules_block(files, "## House Rules")
+        if rules:
+            print(f"\n{rules}")
         if block:
             print(f"\n{block}")
         return 0
@@ -2275,6 +2455,9 @@ def _bundle(argv: list[str] | None, outlines: Outlines) -> int:
              overview[0] if overview else None,
              body_of(overview[1]) if overview else None)
     if args.prep:
+        rules = house_rules_block(files, "===== House Rules =====")
+        if rules:
+            print(f"\n{rules}")
         print_prep_rest(args.vault, files, chosen, wrap, current, chapter,
                         upcoming, outlines)
     return 0

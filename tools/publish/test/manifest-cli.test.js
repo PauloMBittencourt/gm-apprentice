@@ -400,6 +400,25 @@ describe('manifest apply', () => {
     fs.rmSync(vault, { recursive: true, force: true });
   });
 
+  it('--prune-path drops only the named entry, and only once its file is gone (#729)', async () => {
+    const vault = copyVault('auto-exclude');
+    fs.mkdirSync(path.join(vault, '_meta'), { recursive: true });
+    // The roster the update deleted, a handout away for now (its decision and reason must stay), and a note still there.
+    writePublishList(vault, { publishing: ['Sessions/Played Session.md', '_Campaign/Player Characters.md'], excluded: ['Handouts/Away.md'] });
+    const { configPath } = siteFor(vault);
+    const c = capture();
+
+    const rc = await runManifest({ verb: 'apply', configPath, json: true,
+      prunePaths: ['_Campaign/Player Characters.md', 'Sessions/Played Session.md'] }, c.deps);
+    assert.strictEqual(rc, 0, c.text());
+    const written = c.writes[path.join(vault, '_meta', 'publish-list.yaml')];
+    const list = readListText(written);
+    assert.deepStrictEqual(list.publishing, ['Sessions/Played Session.md']);
+    assert.deepStrictEqual(list.excluded, ['Handouts/Away.md']);
+    assert.strictEqual(JSON.parse(c.out.join('')).pruned, 1);
+    fs.rmSync(vault, { recursive: true, force: true });
+  });
+
   // M9: --prune used to drop any entry whose path fell under excludeDirs, because
   // the scanned `files` list never contains those paths at all — indistinguishable
   // from a file that was actually deleted. Adding a folder to excludeDirs must not
@@ -489,16 +508,19 @@ describe('manifest publish-played (#277)', () => {
     fs.rmSync(vault, { recursive: true, force: true });
   });
 
-  it('leaves Excluded entries and unplayed sessions alone', async () => {
-    const vault = playedVault({ excluded: [{ path: 'Sessions/Played Session.md', reason: 'private' }] });
+  it('leaves Excluded entries and unplayed sessions alone, and says so for a played one', async () => {
+    const vault = playedVault({ excluded: [{ path: 'Sessions/Played Session.md', reason: 'private' }, 'Sessions/Planned Session.md'] });
     const { configPath } = siteFor(vault);
     const c = capture();
     await runManifest({ verb: 'publish-played', configPath }, c.deps);
     // Nothing is ticked: the excluded index stays excluded, the prepped session is not
     // played, and the Wrap-Up of a session the GM excluded is not published behind the
-    // GM's back — its recap is that session's record.
+    // GM's back — its recap is that session's record. But the played session is named
+    // with the way out, never skipped in silence (#703); the unplayed one is not.
     assert.deepStrictEqual(c.writes, {});
     assert.match(c.text(), /no finished session needed publishing/);
+    assert.match(c.text(), /Unclear, not ticked \(1\):\n {2}Sessions\/Played Session\.md — the session index is Excluded \("private"\): .*manifest apply --decide "Sessions\/Played Session\.md"/);
+    assert.doesNotMatch(c.text(), /Planned Session/);
     fs.rmSync(vault, { recursive: true, force: true });
   });
 
@@ -862,7 +884,7 @@ describe('manifest publish-played --session --include-unreviewed (#278)', () => 
     const { payload, c } = await run(configPath, { session, publishBody: true });
     assert.deepStrictEqual(c.writes, {});
     assert.deepStrictEqual(payload.published, []);
-    assert.strictEqual(payload.unclear[0].reason, 'the session index is Excluded');
+    assert.match(payload.unclear[0].reason, /^the session index is Excluded \("private"\): .*manifest apply --decide/);
     fs.rmSync(vault, { recursive: true, force: true });
   });
 

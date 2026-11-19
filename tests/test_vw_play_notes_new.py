@@ -14,8 +14,8 @@ sys.path.insert(0, str(REPO / "skills" / "shared" / "scripts"))
 
 import schema_rules  # noqa: E402
 import vaultlib as vl  # noqa: E402
-from test_vw_session_new import (EXPORT, INDEX, NOTES, SESSIONS,  # noqa: E402
-                                 VAULT_FILES, make_vault, run)
+from test_vw_session_new import (EXPORT, EXPORT_NOTE, INDEX, NOTES,  # noqa: E402
+                                 SESSIONS, VAULT_FILES, make_vault, run)
 
 PREPPED = """---
 type: session
@@ -60,12 +60,15 @@ class PlayNotesNewTests(unittest.TestCase):
         self.assertFalse((self.vault / NOTES).exists())
         self.assertEqual(self.read(INDEX), PREPPED)
 
-    def test_notes_hold_the_export_whole_like_session_new(self):
+    def test_the_export_is_its_own_note_like_session_new(self):
         code, out = self.new("--write")
         self.assertEqual(code, 0, out)
-        text = self.read(NOTES)
+        self.assertNotIn("Narrative Record", self.read(NOTES))
+        self.assertNotIn("## Summary", self.read(NOTES))
+        text = self.read(EXPORT_NOTE)
         fm = vl.extract_frontmatter(text)
-        self.assertEqual(fm["type"], "session-play-notes")
+        self.assertEqual(fm["type"], "session-export")
+        self.assertEqual(fm["source_file"], "session_2026_10_18.md")
         self.assertEqual(vl.wikilink_target(fm["session"]),
                          "Session 13 - The Long Way Round")
         self.assertEqual(fm["session_number"], "13")
@@ -74,11 +77,28 @@ class PlayNotesNewTests(unittest.TestCase):
         self.assertEqual(fm["campaign"], "Dead End")
         self.assertEqual(fm["canon_status"], "AUTHORITATIVE")
         self.assertEqual(fm["play_date"], "2026-10-18")
-        self.assertIn("\n## Narrative Record\n", text)
         self.assertTrue(text.endswith(EXPORT), text)
         errors = [m for level, m in schema_rules.frontmatter_findings(
             fm, None, vl.raw_frontmatter(text)) if level == "ERROR"]
         self.assertEqual(errors, [])
+
+    def test_created_by_names_who_filed_it(self):
+        # #695: session-play files its notes as session-play; the default
+        # is manual, on both records.
+        code, out = self.new("--write", "--created-by", "session-play")
+        self.assertEqual(code, 0, out)
+        for rel in (NOTES, EXPORT_NOTE):
+            fm = vl.extract_frontmatter(self.read(rel))
+            self.assertEqual(fm["created_by"], "session-play", rel)
+
+    def test_created_by_defaults_to_manual_and_takes_only_known_names(self):
+        code, out = self.new("--write")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(vl.extract_frontmatter(self.read(NOTES))
+                         ["created_by"], "manual")
+        with self.assertRaises(SystemExit):
+            run(self.vault, "play-notes-new", "--session", INDEX,
+                "--created-by", "someone")
 
     def test_index_gets_the_link_and_date_and_keeps_the_rest(self):
         code, out = self.new("--write")
@@ -87,7 +107,9 @@ class PlayNotesNewTests(unittest.TestCase):
         want = (PREPPED.replace("play_date: null", 'play_date: "2026-10-18"')
                 .replace("status: prepped", "status: played")
                 .replace("  play_notes: null", '  play_notes: '
-                         '"[[Session 13 - The Long Way Round - Play Notes]]"'))
+                         '"[[Session 13 - The Long Way Round - Play Notes]]"')
+                .replace("  wrap_up: null\n", "  wrap_up: null\n  export: "
+                         '"[[Session 13 - The Long Way Round - Export]]"\n'))
         self.assertEqual(text, want)
 
     def test_export_names_are_resolved(self):
@@ -155,6 +177,7 @@ class PlayNotesNewTests(unittest.TestCase):
             self.assertEqual(code, 0, out)
             self.assertIn(f"status: {later}\n", self.read(INDEX))
             (self.vault / NOTES).unlink()
+            (self.vault / EXPORT_NOTE).unlink()
 
     def test_old_play_date_is_shown(self):
         (self.vault / INDEX).write_text(

@@ -47,7 +47,7 @@ and `_meta/` schema to file correctly.
 
 ## Gotchas
 
-1. **Read `_Templates/_Template_{Type}.md` before creating any entity** — the template is canonical; copying existing entities propagates drift and deprecated fields.
+1. **A new entity goes in through `entity-new`** (session-wrapup Step 4: a block of the batch, or `gma vault-write <vault> entity-new --type <type> --name "<Name>"` with the body on stdin: preview, then `--write`) — it fills the vault's template, which is canonical; read `_Templates/_Template_{Type}.md` for its section names. Copying existing entities propagates drift and deprecated fields.
 2. **One file per entity** — multiple entities per file break wiki-links and publish rendering.
 3. **Never modify external source files** — they are the GM's backup and proof of ownership.
 4. **Process buckets chronologically, earliest first**, each through Phases 3-6 before the next — later buckets reference entities created by earlier ones.
@@ -90,7 +90,8 @@ Per bucket, read all AUTHORITATIVE material. Source priority:
 1. `_Campaign/Timeline.md`
 2. Existing session wrap-ups
 3. Play transcripts and fragments
-4. `_Campaign/Player Characters.md` — deaths, transitions, rosters
+4. The PC notes (`gma vault-check <vault> active-pcs --all`) — each
+   PC's player and status
 5. Existing entity files — current canon
 
 **Output:** confirmed events (with source citations) and gaps
@@ -119,8 +120,8 @@ Read `references/synthesis-templates.md`.
    `shared/session-document-chain.md`. Block/seam test: keep
    finished-prose blocks from the sources verbatim; author only
    fragment-derived text and seams. A `Session export` row is
-   copied into place, not synthesized (synthesis-templates.md §
-   Synthesis Rules, rule 7).
+   filed whole as an Export note with `export-new`, not synthesized
+   (synthesis-templates.md § Synthesis Rules, rule 7).
 3. Follow the session-wrapup workflow for the Wrap-Up file and
    entities. One new entity often implies others (an NPC brings
    locations) — create them too.
@@ -131,11 +132,17 @@ Read `references/synthesis-templates.md`.
    campaign that does not publish sheets (`player_site.sheets.show`
    off) do not ask where one is kept; when `gma vault-check <vault> pc-body`
    emits no Stat Sheet rows there is nothing to ask.
+5. A PC who died, retired or left play in the period: record it in
+   the period's session material, and set `status:` on that PC's own
+   note only to where the PC stands now (a PC who left and came back
+   is active); the PC note is the only place a PC's player and
+   current status are kept.
 
 Check each entity as you write it: entity mentions are
 `[[Entity Name]]` wiki-links; `play_date` is `YYYY-MM-DD`;
 `in_game_date` follows `shared/session-document-chain.md` (never a
-fabricated Gregorian date or a time of day). Per bucket, run
+fabricated Gregorian date; no time of day once the campaign's dates
+carry a year). Per bucket, run
 `gma vault-check <vault> frontmatter --folder <dir>` (see
 `shared/vault-access.md`) and fix every ERROR before the next
 bucket.

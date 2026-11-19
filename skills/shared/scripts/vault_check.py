@@ -20,6 +20,7 @@ Usage:
   vault_check.py VAULT relationships [--folder SUB] [--file REL ...] [--newer-than REL]
   vault_check.py VAULT chapters      (a chapter with two chapter notes: ASK)
   vault_check.py VAULT npc-pairs     (one character with an NPC and a PC note: ASK)
+  vault_check.py VAULT npc-stats [--plan PLAN] [--played]   (NPCs with no stat block)
   vault_check.py VAULT sessions      (also: played sessions/Wrap-Ups not under Publishing)
   vault_check.py VAULT gm-leak [--folder SUB] [--fix]
   vault_check.py VAULT gm-leak --renest-excludes [--fix]
@@ -68,8 +69,9 @@ INFO (context the auditing skill should triage, not a defect).
 `gm-leak` skips a note the publish tool says it does not publish (under
 `player_site.hide.folders`, no `type:`, a draft), and otherwise by
 frontmatter: a `type:` of
-`session-plan`, `session-play-notes`, `plan`, or `meta` is never
-published and always skipped, even under `_meta/`; `publish: none`
+`session-plan`, a play record (`session-play-notes`, `session-export`,
+which the commands file with `publish: false`), `plan`, or `meta` is
+skipped as never meant for players, even under `_meta/`; `publish: none`
 pages are skipped and `publish: stub` pages are scanned only over
 the sections they ship. ERROR is an orphan `<!-- /gm-only -->`
 closer (everything above it publishes); WARNING is an unclosed opener or a
@@ -142,6 +144,16 @@ row and not listed. A row names the first three pages that name a note;
 row for a vault with no site, and one for a site whose tool is from before
 these findings. It sits outside `all`: the list is long and has its own
 procedure (campaign-qa's Site Faults).
+
+`npc-stats` lists the NPC notes whose stat block is missing or a
+placeholder, one row each: `MISSING`, `PLACEHOLDER` (the template's
+`{STAT BLOCK: …}` paragraph, a system block's `{…}` fields, or words
+saying it comes later), `BLANK` (an empty stat heading or score table) or
+`STOCK` (a major NPC with only a stock creature's name), then whether the
+NPC is major (`companion: true`, or an entry of an adventure brief's
+`## Key NPCs`) or other. `--plan PLAN` keeps the NPCs that Plan's scenes
+name; `--played` those a Wrap-Up or a played scene links. A `# system:`
+line closes it. The rules are `npc_stats.py`'s; it stays outside `all`.
 
 Two commands are gates rather than reports and sit outside `all`:
 `version` emits one row whose first column is a verdict
@@ -252,8 +264,7 @@ from vaultlib import (  # noqa: F401
     set_key,
     vault_files,
     wikilink_target,
-    yaml_scalar,
-)
+    yaml_scalar,)
 
 # A frontmatter line carrying an unquoted wikilink (Juggl breaks on these)
 UNQUOTED_LINK_RE = re.compile(r'^\s*(?:[\w-]+:|-)\s*\[\[')
@@ -280,8 +291,30 @@ def _emit_tool_once() -> Callable[[str, list[str]], None]:
 
 
 
+def _escaped_empty_rows(vault: Path, rel: str, fix: bool) -> list[str]:
+    """The rows for a note's escaped-empty-quote values (see
+    `check_frontmatter`), writing the repair when `fix`. Read raw, so line
+    endings survive."""
+    path = vault / rel
+    with path.open("r", encoding="utf-8", newline="") as f:
+        raw = f.read()
+    keys, new = vaultlib.escaped_empty_keys(raw, fix=fix)
+    if not keys:
+        return []
+    shown = ", ".join(keys)
+    if not fix:
+        return [f"WARNING\t{rel}\t{shown}: the value is escaped quotes "
+                f"(\\\"\\\"), a four-character string and not empty — "
+                f"vault-check frontmatter --fix writes \"\" instead"]
+    with path.open("w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    return [f"FIXED\t{rel}\t{shown}: escaped quotes rewritten to an empty "
+            f"value (\"\")"]
+
+
 def check_frontmatter(vault: Path, folder: str | None,
-                      explain: ExplainAll | None = None) -> list[str]:
+                      explain: ExplainAll | None = None,
+                      fix: bool = False) -> list[str]:
     """Schema rules, read by vaultlib's line reader, then the one thing
     that reader cannot see: a note the site's build cannot parse at all
     (#287). The line reader takes the last of a duplicated key and accepts
@@ -289,7 +322,12 @@ def check_frontmatter(vault: Path, folder: str | None,
     page. Which notes those are is the publish tool's answer (`explain
     --all`), never a second YAML reading here. An ERROR, like the schema
     rows: the post-write loops fix ERRORs, and a skill that has just
-    written such a note must not leave it."""
+    written such a note must not leave it.
+
+    A value that is only escaped empty quotes (`voice: \\"\\"`, #715) reads
+    as a four-character string, not as empty: a WARNING each. With `fix`
+    the value is rewritten to `""` (nothing else in the note changes) and
+    the row reads FIXED."""
     rows = []
     unparsed: set[str] = set()
     notes = list(vault_files(vault, folder))
@@ -340,6 +378,7 @@ def check_frontmatter(vault: Path, folder: str | None,
         if fm is None:
             rows.append(f"INFO\t{rel}\tno frontmatter")
             continue
+        rows += _escaped_empty_rows(vault, rel, fix)
         # The schema's rules, from the one place they live (the repo's
         # validator asks the same function); custom types are INFO.
         rows += [f"{level}\t{rel}\t{message}"
@@ -366,7 +405,7 @@ DIGITS_RE = re.compile(r"\d+(?:\.\d+)?")
 # wrap-ups, chapter overviews — share names by convention and
 # only flood the report.
 STRUCTURAL_TYPES = {
-    "session", "session-plan", "session-play-notes",
+    "session", "session-plan", "session-play-notes", "session-export",
     *WRAP_UP_TYPES, "scene", "chapter",
     "meta", "timeline", "world_flags", "plan",
 }
@@ -1200,35 +1239,70 @@ PICTURES_ON = (
     "whose steps say so draws last (`gma llms image`, \"When no one asked\").")
 
 
+PICTURES_OFF = (
+    "# pictures off: drawing without asking is off, but this vault has a "
+    "picture source set; a wrap-up offers its scene pictures in one line "
+    "and draws nothing.")
+
+
 def pictures_line(vault: Path, verdict: str) -> str | None:
     """`PICTURES_ON` when `vault.images.auto` is on, so the skills learn it
-    from the gate they already run and a vault with drawing off pays
-    nothing. Only after a verdict whose check read the vault's settings
-    (`unmoved` reads them; a MISMATCH vault is updated, then the skill
-    resumes), and only from what that read found: settings that could not
-    be read, or no Node, drop the line without asking the tool again."""
+    from the gate they already run. `PICTURES_OFF` when it is off but the
+    GM has chosen who draws (a source, or a service, which counts as
+    choosing one), so a skipped wrap-up is not silent; a vault with no
+    pictures set up pays nothing. Only after a verdict whose check read the
+    vault's settings (`unmoved` reads them; a MISMATCH vault is updated,
+    then the skill resumes), and only from what that read found: settings
+    that could not be read, or no Node, drop the line without asking the
+    tool again."""
     if verdict not in ("OK", "MISMATCH", "AHEAD"):
         return None
     found = vaultlib.settings_already_read(vault)
     if found is None:
         return None
-    return PICTURES_ON if found.get("vault.images.auto") is True else None
+    if found.get("vault.images.auto") is True:
+        return PICTURES_ON
+    if found.get("vault.images.source") or found.get("vault.images.service"):
+        return PICTURES_OFF
+    return None
 
 
-def list_active_pcs(vault: Path) -> list[str]:
-    """The roster the session skills open with, as `PC` rows.
+def _shown(value: Any) -> str:
+    """A frontmatter scalar as a roster cell, on one line (a tab or line
+    break in it would split the row): `?` when unset."""
+    if isinstance(value, list):
+        value = value[0] if len(value) == 1 else ""
+    text = " ".join(str(value).split()) if value is not None else ""
+    return text or "?"
+
+
+def list_active_pcs(vault: Path, everyone: bool = False) -> list[str]:
+    """The roster the session skills open with, as `PC` rows: each PC's
+    note, aliases, asOfSession, player and status, read from the PC notes
+    themselves, the one source (#729). `everyone` adds the PCs out of play
+    (dead, retired, ...), so a status is never guessed.
 
     Level column is `PC` rather than INFO/WARNING/ERROR: nothing here is
     a finding, and labelling a roster INFO invites a triage pass over
     rows that only ever needed reading.
     """
+    if everyone:
+        pcs = [(rel, fm) for rel, text in vaultlib.vault_files(vault)
+               for fm in [vaultlib.extract_frontmatter(text) or {}]
+               if vaultlib.is_active_pc(rel, fm, frozenset())]
+    else:
+        pcs = active_pcs(vault)
     rows = []
-    for rel, fm in active_pcs(vault):
+    # A Midwife draft is no PC at the table (`_archive/` and `_QA/` are
+    # already left out), in either list.
+    for rel, fm in [(r, f) for r, f in pcs if not vaultlib.is_record_copy(r)]:
         names = ", ".join(link_aliases(fm))
         as_of = fm.get("asOfSession")
         stamp = str(as_of) if as_of not in (None, "", []) else "?"
         rows.append(f"PC\t{rel}\t{Path(rel).stem}; "
-                    f"aliases: {names or 'none'}; asOfSession: {stamp}")
+                    f"aliases: {names or 'none'}; asOfSession: {stamp}; "
+                    f"player: {_shown(fm.get('player_name'))}; "
+                    f"status: {_shown(fm.get('status'))}")
     return rows
 
 
@@ -1291,8 +1365,15 @@ YAML_NULLS = {"", "null", "~"}
 SESSION_DOC_TYPES: dict[str, tuple[str, set[str]]] = {
     "plan": ("plan", {"session-plan"}),
     "play_notes": ("play notes", {"session-play-notes"}),
+    "export": ("export", {"session-export"}),
     "wrap_up": ("wrap-up", set(WRAP_UP_TYPES)),
 }
+# The play records: what happened at the table, each its own note with one
+# writer (session-play or the GM; a table-assistant export dropped in
+# whole). Any one of them makes a session played; wrap-up reads them all.
+PLAY_RECORD_KEYS = ("play_notes", "export")
+PLAY_RECORD_TYPES = frozenset().union(
+    *(SESSION_DOC_TYPES[k][1] for k in PLAY_RECORD_KEYS))
 
 
 def _chain_document(files: list[tuple[str, str, dict]], stems: dict[str, str],
@@ -1403,8 +1484,13 @@ def publish_list_sets(vault: Path) -> tuple[dict[str, set[str]] | None,
     ToolAnswer says which (its `why`)."""
     answer = ask_publish_tool(vault, ["manifest", "list"], site_optional=True)
     data = answer.data
-    if not isinstance(data, dict):
+    if data is None:
         return None, answer
+    if not isinstance(data, dict):
+        # An answer of the wrong shape is not "no list".
+        return None, ToolAnswer(
+            why="manifest list did not return the expected JSON",
+            used=answer.used)
     if data.get("listed") is False:
         return None, ToolAnswer(used=answer.used)
     try:
@@ -2209,9 +2295,10 @@ NOTE_FAULT_CODES = ("ALIAS_IN_PROSE", "NEVER_SHOW_IN_PROSE",
                     "COMMENT_STRAY", "NAMED_NO_PAGE", "TOHIT_UNREAD",
                     "SKILL_BELOW_BASE", "HEADING_IN_HIDDEN_BLOCK",
                     "TABLE_OVERWIDE", "PROP_NOT_COPIED",
-                    "MOMENT_KIND_UNKNOWN", "CHAPTER_STATUS_UNKNOWN",
-                    "CHAPTER_NO_TEASER", "CHAPTER_ACTIVE_MANY",
-                    "CHAPTER_PLANNED_PLAYED", "CHAPTER_TITLE_SHARED",
+                    "MOMENT_KIND_UNKNOWN", "UNFILLED_PLACEHOLDER",
+                    "CHAPTER_STATUS_UNKNOWN", "CHAPTER_NO_TEASER",
+                    "CHAPTER_ACTIVE_MANY", "CHAPTER_PLANNED_PLAYED",
+                    "CHAPTER_TITLE_SHARED",
                     "SESSION_NO_CHAPTER", "CHAPTER_REF_UNSHOWN")
 # How many of the pages naming a note a row lists; `--file` lists them all.
 SITE_FAULT_PAGES = 3
@@ -2260,7 +2347,8 @@ def _site_fault_row(f: dict[str, Any], whole: bool) -> str:
     elif code in ("TOHIT_UNREAD", "SKILL_BELOW_BASE",
                   "HEADING_IN_HIDDEN_BLOCK", "TABLE_OVERWIDE",
                   "PROP_NOT_COPIED", "MOMENT_KIND_UNKNOWN",
-                  "CHAPTER_STATUS_UNKNOWN", "CHAPTER_NO_TEASER",
+                  "UNFILLED_PLACEHOLDER", "CHAPTER_STATUS_UNKNOWN",
+                  "CHAPTER_NO_TEASER",
                   "CHAPTER_ACTIVE_MANY", "CHAPTER_PLANNED_PLAYED",
                   "CHAPTER_TITLE_SHARED", "SESSION_NO_CHAPTER",
                   "CHAPTER_REF_UNSHOWN", "WITHHELD_NAME_PUBLIC", "WITHHELD_PUBLISHED",
@@ -2817,17 +2905,19 @@ def check_sessions(vault: Path) -> list[str]:
             derived = ("reviewed"
                        if by_rel.get(wrap, {}).get("canon_status")
                        == "AUTHORITATIVE" else "wrap-up")
-        elif chain["play_notes"]:
+        elif any(chain[k] for k in PLAY_RECORD_KEYS):
             derived = "played"
         elif chain["plan"]:
             derived = "prepped"
         else:
             derived = "planned"
 
+        # The export shows only when there is one: most sessions have none.
         flags = " ".join(
             f"{label}={'✓' if chain[key] else '–'}"
             for key, label in (("plan", "plan"), ("play_notes", "play-notes"),
-                               ("wrap_up", "wrap-up")))
+                               ("export", "export"), ("wrap_up", "wrap-up"))
+            if key != "export" or chain[key])
         status = fm.get("status")
         declared = (str(status) if status and not isinstance(status, list)
                     else "?")
@@ -2896,10 +2986,13 @@ GM_AFTER_POSSESSIVE = frozenset((
     "guidance", "advice", "tips", "secrets", "discretion", "control",
     "hands", "reference", "background", "section"))
 
-# Types the publish pipeline never builds a page for. Nothing in them can
-# leak however it is written, and flagging their (correctly) Keeper-facing
-# headings would bury the findings that matter.
-GM_LEAK_SKIP_TYPES = {"session-plan", "session-play-notes", "plan", "meta"}
+# Types never meant for players: prep, meta, and the raw play records
+# (filed with `publish: false`; the player site does not page them). Flagging
+# their (correctly) Keeper-facing headings would bury the findings that
+# matter. A play record without `publish: false` in a vault with no publish
+# list would publish; the update's `play-records-publish` check marks those
+# older notes (#692).
+GM_LEAK_SKIP_TYPES = {"session-plan", *PLAY_RECORD_TYPES, "plan", "meta"}
 
 # A bold label opening a paragraph: `**Secret:** he lied.` The colon is
 # optional; `_bold_label` reads either as the label, colon and all.
@@ -3214,7 +3307,11 @@ def _gm_leak(vault: Path, folder: str | None, fix: bool = False,
                 "handout's Context, Clues and Prop Notes, were not checked",
                 tool.used))
     for rel, text, fm in notes:
-        if entity_type(fm) in GM_LEAK_SKIP_TYPES:
+        # A play record is skipped by type only when the publish tool has
+        # not said what publishes; when it has, one that does publish (a
+        # vault with no publish list, no `publish: false`) is scanned.
+        if entity_type(fm) in GM_LEAK_SKIP_TYPES and (
+                entity_type(fm) not in PLAY_RECORD_TYPES or published is None):
             continue
         if publish_mode(fm) == "none":
             continue
@@ -4057,11 +4154,32 @@ def _wrap_context(rel: str, fm: dict,
         elif found:
             ctx.ambiguous_index = True
 
-    notes = [r for r, _t, f in entries
-             if f.get("type") == "session-play-notes"
-             and ctx.number is not None
-             and _session_number_of(r, f) == ctx.number
-             and _chapters_agree(chapter, chapter_key(r, f))]
+    # The source is the Export, which holds the whole table record, else
+    # the Play Notes (as wrapup-new chooses). A Wrap-Up with no chapter of
+    # its own takes its resolved index's, so another chapter's session of
+    # the same number is not taken for it.
+    if chapter is None and ctx.index_rel is not None:
+        chapter = next((chapter_key(r, f) for r, _t, f in indexes
+                        if r == ctx.index_rel), None)
+    # A record whose `session:` names another index is not this session's.
+    own = (normalize(Path(ctx.index_rel).stem)
+           if ctx.index_rel is not None else None)
+
+    def names_another(f: dict) -> bool:
+        target = wikilink_target(f.get("session"))
+        return bool(own and target and link_target(target) != own)
+
+    notes: list[str] = []
+    for key in ("export", "play_notes"):
+        notes = [r for r, _t, f in entries
+                 if isinstance(f.get("type"), str)
+                 and f["type"] in SESSION_DOC_TYPES[key][1]
+                 and ctx.number is not None
+                 and _session_number_of(r, f) == ctx.number
+                 and _chapters_agree(chapter, chapter_key(r, f))
+                 and not names_another(f)]
+        if notes:
+            break
     if len(notes) == 1:
         ctx.notes_rel = notes[0]
     elif notes:
@@ -5123,8 +5241,12 @@ def renest_excludes_migration(vault: Path, fix: bool) -> list[str]:
 
     Walks every file the publisher might ship, not just the ones the
     `gm-leak` report reads — a played session-plan publishes too — so
-    only the publisher's `exclude_dirs`, untyped files and `publish:
-    none` pages are skipped. Every file is planned and leak-checked
+    only the vault's own hidden folders (`player_site.hide.folders`),
+    untyped files and `publish: none` pages are skipped. A note in one
+    of the plugin's working folders (`_inbox`, `_midwife`, `_QA`), which
+    the publisher never ships, is still re-nested: it may be moved into
+    the campaign's folders later, and by then the list no longer names
+    its heading. Every file is planned and leak-checked
     against the new config before anything is written; one refusal, or
     an `exclude_sections` the tool cannot read, writes nothing.
     """
@@ -5900,7 +6022,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("command", choices=["frontmatter", "names", "index",
                                         "stale-drafts", "changed", "tables",
                                         "timeline", "read-aloud",
-                                        "relationships", "chapters", "npc-pairs", "sessions",
+                                        "relationships", "chapters", "npc-pairs",
+                                        "npc-stats", "sessions",
                                         "gm-leak", "pc-body", "wrapup",
                                         "site-faults", "settings",
                                         "version", "active-pcs", "voices", "stories",
@@ -5930,6 +6053,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "file's own mtime — a backstop scope, or a "
                          "completeness cross-check against an explicit "
                          "--file list")
+    ap.add_argument("--plan", metavar="PLAN",
+                    help="npc-stats only: just the NPCs this Session Plan's "
+                         "scenes name (its path, or its note name)")
+    ap.add_argument("--played", action="store_true",
+                    help="npc-stats only: just the NPCs a Wrap-Up or a "
+                         "played scene links")
     ap.add_argument("--json", action="store_true",
                     help="settings only: print the rows as JSON")
     ap.add_argument("--dry-run", action="store_true",
@@ -5942,7 +6071,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="settings only: apply the fix for each named fault "
                          "(a proposed fix needs the GM's yes by name)")
     ap.add_argument("--fix", action="store_true",
-                    help="apply the settings check's certain fixes, or the "
+                    help="apply the settings check's certain fixes, rewrite the "
+                         "frontmatter check's escaped-quote values (\\\"\\\") to "
+                         "empty, or the "
                          "wrapup or gm-leak check's mechanical "
                          "repairs (frontmatter backfills and the "
                          "Keeper-facing re-nest for wrapup; the "
@@ -5963,6 +6094,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--threshold", type=float,
                     help="similarity ratio for names (default: the vault's "
                          "vault.name_match setting)")
+    ap.add_argument("--all", dest="all_pcs", action="store_true",
+                    help="active-pcs only: also list the PCs out of play "
+                         "(dead, retired, ...) with their status")
     ap.add_argument("--since", type=int,
                     help="session number for the changed command")
     ap.epilog = 'Example: gma vault-check "<vault>" version'
@@ -5991,6 +6125,10 @@ def _main(argv: list[str] | None) -> int:
 
     if not args.vault.is_dir():
         print(f"error: not a directory: {args.vault}", file=sys.stderr)
+        return 2
+    if (args.plan is not None or args.played) and args.command != "npc-stats":
+        print("error: --plan and --played need the npc-stats command",
+              file=sys.stderr)
         return 2
     if args.renest_excludes and (args.command != "gm-leak" or args.folder):
         print("error: --renest-excludes needs the gm-leak command and the "
@@ -6039,7 +6177,7 @@ def _main(argv: list[str] | None) -> int:
             print(line)
         return code
     if args.command == "active-pcs":
-        emit("active-pcs", list_active_pcs(args.vault))
+        emit("active-pcs", list_active_pcs(args.vault, args.all_pcs))
         return 0
     if args.command == "voices":
         if not vaultlib.setting_or_builtin(args.vault, "vault.voices"):
@@ -6086,6 +6224,16 @@ def _main(argv: list[str] | None) -> int:
 
     if args.command == "settings":
         return check_settings(args.vault, args.fix, args.apply, args.json)
+    if args.command == "npc-stats":
+        import npc_stats  # its own module: it reads Plans and scenes
+        rows, error = npc_stats.check_npc_stats(args.vault, args.plan,
+                                                args.played)
+        if error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        emit("npc-stats", rows)
+        print(npc_stats.system_line(args.vault))
+        return 0
 
     explain = ExplainAll(args.vault)
     emit_rows = _emit_tool_once() if args.command == "all" else emit
@@ -6101,8 +6249,9 @@ def _main(argv: list[str] | None) -> int:
                       else run_check())
 
     if args.command in ("frontmatter", "all"):
-        emit_rows("frontmatter", check_frontmatter(args.vault, args.folder,
-                                                   explain))
+        emit_rows("frontmatter", check_frontmatter(
+            args.vault, args.folder, explain,
+            args.fix and args.command == "frontmatter"))
     if args.command in ("names", "all"):
         threshold = (args.threshold if args.threshold is not None
                      else setting_or_builtin(args.vault, "vault.name_match"))

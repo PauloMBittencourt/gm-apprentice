@@ -19,14 +19,17 @@ const { playerFoldPlan } = require('../published-view');
 const { foldLabelsOf, labelFoldedLinks } = require('../story-fold');
 const { chapterShownMarkdown } = require('../story-spine');
 const { chapterStatusOf } = require('../shared-lists');
-const { ruleValue } = require('../excluding-values');
-const { labelsForLinks } = require('../wikilink');
+const { ruleValue, WORKSPACE_DIRS } = require('../excluding-values');
+const { labelsForLinks, linkText } = require('../wikilink');
 const { isWrapUp } = require('../session-hub');
 const { parseNote } = require('../frontmatter');
 const { canonicalNfc } = require('../unicode');
 const {
   playerSafeMarkdown, stubMarked, stubCut, hiddenFieldsOf, publishedFrontmatter, pcHeadingsUnstable, publishMode, isWithheld, stripLeadingH1, gmAliasRewriter,
+  resolveImageEmbeds, resolveWikiLinks, extractSections, portraitBasename,
 } = require('../processor');
+const { getRenderer } = require('../templates/pc-registry');
+const { pageText } = require('../note-faults');
 const { createMarks, markKinds, sanitize, markedSpans } = require('../gm-marks');
 const { piecesOfMarkdown, piecesOfValue, piecesOfHtml, fieldRunsOf, tableRunsOf, textsOfMarkdown, wordsOf, stringsOfValue, MIN_WORDS } = require('./text');
 const { TEXT_EXT, fileText } = require('./match');
@@ -36,7 +39,7 @@ const { cutHtml } = require('../props/html-cut');
 const { styledPageProblem } = require('../props/page');
 const { pathProblem } = require('../props/files');
 const { buildConnections } = require('../connections');
-const { overviewThreads, threadsOnPage, withSharedThreads } = require('../shared-threads');
+const { overviewView, houseRulesOf, sharedEntries, threadsOnPage, withSharedThreads } = require('../shared-threads');
 const { sitePathOf } = require('../templates/four-oh-four');
 
 const sha1 = (bytes) => crypto.createHash('sha1').update(bytes).digest('hex');
@@ -46,12 +49,58 @@ const NEVER_SHOWN = ALWAYS_EXCLUDE_DIRS.map((d) => d.toLowerCase());
 const neverShown = (rel) => rel.split('/').slice(0, -1).some((s) => NEVER_SHOWN.includes(s.toLowerCase()));
 // The plugin's own working folders, at the top of the vault: reports, inbox, archive and drafts that routinely quote the
 // published site. Only these: a folder the GM lists in hide.folders (a "Secrets" folder) is collected like any other.
-const WORKING_DIRS = ['_qa', '_inbox', '_archive', '_midwife'];
+const WORKING_DIRS = [...WORKSPACE_DIRS, '_archive'].map((d) => d.toLowerCase());
 const inWorkingDir = (rel) => WORKING_DIRS.includes(rel.split('/')[0].toLowerCase());
 // The fields a page prints under the tool's own labels (occupation as "Role"), as "label value".
-function printedRows(page) {
-  try { return rowsFor(page, {}).filter(([, text]) => text).map(([label, text]) => `${label} ${text}`); } catch (e) { return []; }
+// `wrapUp` is the Wrap-Up a session index pairs with, if any: its page, and its preview, then print its in-game date
+// (previews.js rowsFor), so the date a GM-only World State repeats is no secret (#704).
+function printedRows(page, wrapUp = null) {
+  const ctx = { hubWrapUps: { get: () => wrapUp } };
+  try { return rowsFor(page, ctx).filter(([, text]) => text).map(([label, text]) => `${label} ${text}`); } catch (e) { return []; }
 }
+// The text of a PC's character sheet, made as the build makes it (build.js, case 'pc') from the note's published body
+// and fields: each part the sheet puts on the page (the sheet, its combat, spells and equipment tabs, its vitals), as
+// the page reads. A sheet prints the note's own rows in its own order (D&D's Bonus action block runs a feature's name
+// into its summary), so a hidden line with the same rules words (an NPC stat block's "Flurry of Blows (1 Focus).") is
+// shown there from the PC's note, not from the hidden one (#752). Only words of the published body and the sheet's own
+// labels: with sheets off (a PC keep list) the build makes no sheet, and none is read. A sheet that cannot be made here
+// excuses nothing. Its pictures resolve against the player site's attachments, as the build's do: an embed the build
+// turns into a picture (in a section's heading, say) is not dropped here.
+function sheetTexts(shownMd, fields, { system, playerConfig, linkMap, outputPath, imageMap }) {
+  const renderer = getRenderer(system);
+  if (!renderer) return [];
+  const rules = playerConfig.rules_lists || {};
+  const meta = {
+    system, live: false, tohit: playerConfig.tohit_calculator === 'on',
+    gurpsReference: rules.gurpsReference !== false, cocSkillList: rules.cocSkillList !== false,
+  };
+  let rendered;
+  try {
+    const md = resolveWikiLinks(resolveImageEmbeds(shownMd, imageMap, outputPath, null, { warn: false, portraitBasename: portraitBasename(fields) }), linkMap, outputPath);
+    rendered = renderer(fields, extractSections(md), meta);
+  } catch (e) { return []; }
+  const parts = typeof rendered === 'string' ? [rendered]
+    : Object.entries(rendered || {}).filter(([key, html]) => /Html$/.test(key) && typeof html === 'string').map(([, html]) => html);
+  return parts.map((html) => pageText(html, { attributes: true })).filter((text) => text.trim());
+}
+
+// A paused scene's snapshot opens with the line the update tool writes under `## Paused`, `After [[Session]].`
+// (vault_write.py scene-paused). When that session is published the line says nothing but its title, which the site
+// prints, so it is not hidden text (#765). Only that one line, only when its link names a published note: the snapshot
+// under it is still hidden, and so is the line when the session is not on the site.
+const PAUSED_HEADING = /^##[ \t]+Paused[ \t]*$/;
+const PAUSED_AFTER = /^After (\[\[[^\]|]+\]\])\.$/;   // a bare link only: a label is the GM's own words
+function withoutPausedAfter(md, linkMap) {
+  const lines = md.split('\n');
+  const at = lines.findIndex((l) => PAUSED_HEADING.test(l.replace(/\r$/, '')));
+  if (at < 0) return md;
+  let i = at + 1;
+  while (i < lines.length && !lines[i].trim()) i++;
+  const m = i < lines.length ? PAUSED_AFTER.exec(lines[i].trim()) : null;
+  if (!m || !(canonicalNfc(linkText(m[1]).key.trim()) in linkMap)) return md;
+  return [...lines.slice(0, i), ...lines.slice(i + 1)].join('\n');
+}
+
 const HELD_TITLE = 'the title of an unpublished prop';
 const HELD_FIELD = 'a field of an unpublished prop';
 const clip = (s, max = 160) => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
@@ -98,7 +147,9 @@ function collectHidden({ configPath, outputDir = null }) {
   // A wrap-up the player site folds into a Story page (story-fold.js) is linked, unaliased, by that page's title: the
   // build prints the label. So such a link is read both ways, by the note it names and by the label, in hidden text
   // and in what players may already read. The plan is the one explain reads (published-view.js playerFoldPlan).
-  const foldPlanned = playerFoldPlan(published, hubs, playerConfig, scanAttachments(scanConfigFor(Object.assign({}, config, { vaultPath }), playerConfig)), vaultPath);
+  // The player site's attachments, as its build scans them: for the fold plan and a PC sheet's pictures.
+  const playerImages = scanAttachments(scanConfigFor(Object.assign({}, config, { vaultPath }), playerConfig));
+  const foldPlanned = playerFoldPlan(published, hubs, playerConfig, playerImages, vaultPath);
   const foldLabels = foldLabelsOf(foldPlanned, linkMap);
   const relabel = (md) => (foldLabels.size ? labelFoldedLinks(md, linkMap, { labels: foldLabels }) : md);
   const bothWays = (md) => { const r = relabel(md); return r === md ? [md] : [md, r]; };
@@ -137,8 +188,13 @@ function collectHidden({ configPath, outputDir = null }) {
   // Overview's copy is rewritten the same way first, so a thread reads as the site prints it.
   const scannedPaths = new Set(corpus.map((p) => p.sourcePath));
   const aliasRewriter = gmAliasRewriter(corpus.concat(notes.filter((n) => !scannedPaths.has(n.sourcePath))), published, notes, playerConfig.withheld_words);
-  const sharedAll = overviewThreads({ allNotes: notes, corpus, config: scanConfig, rewrite: aliasRewriter ? aliasRewriter.markdown : null,
+  const overviewMd = overviewView({ allNotes: notes, corpus, config: scanConfig, rewrite: aliasRewriter ? aliasRewriter.markdown : null,
     viewOptions: { gm: false, mark: null, excludeCallouts, excludeSections, pcKeepSections, storyMoments: storyMomentsOn(playerConfig) } });
+  const sharedAll = overviewMd === null ? [] : sharedEntries(overviewMd);
+  // The Overview's House Rules section is the House Rules page's text, public whether or not the Overview publishes, so
+  // it is visible text: the Overview's body is hidden text otherwise, and the page would match it.
+  const houseRulesMd = overviewMd === null ? '' : houseRulesOf(overviewMd);
+  if (houseRulesMd) visible.push('House Rules', ...bothWays(houseRulesMd).flatMap((md) => [textsOfMarkdown(md, { headings: true }).join('\n'), ...tableRunsOf(md)]));
   if (sharedAll.length) {
     for (const page of published) {
       if (String((page.frontmatter || {}).type).trim().toLowerCase() !== 'pc') continue;
@@ -179,7 +235,7 @@ function collectHidden({ configPath, outputDir = null }) {
       // prop_title, prop_line and the state fields), never a field nothing prints.
       visible.push(String(page.displayTitle || ''), ...stringsOfValue([shownFields.prop_title, shownFields.prop_line, ...Object.values(stateFieldsOf(shownFields))]));
     } else {
-      visible.push(String(page.displayTitle || ''), ...fieldRunsOf(shownFields, page.displayTitle), ...printedRows({ ...page, frontmatter: shownFields }));
+      visible.push(String(page.displayTitle || ''), ...fieldRunsOf(shownFields, page.displayTitle), ...printedRows({ ...page, frontmatter: shownFields }, hubs.get(page) || null));
       if (foldLabels.size) visible.push(...fieldRunsOf(relabelValue(shownFields), page.displayTitle));
     }
     if (hubs.has(page)) {
@@ -194,6 +250,8 @@ function collectHidden({ configPath, outputDir = null }) {
       continue;
     }
     const options = { excludeSections, excludeCallouts, frontmatter: fm, pcKeepSections, storyMoments: storyMomentsOn(playerConfig) };
+    // As the build picks a PC page (build.js, case 'pc').
+    const isPc = fm.type === 'pc';
     for (const source of [page.markdown, page.storyMarkdown].filter((t) => typeof t === 'string')) {
       let text = sanitize(source);
       let shownText = source;
@@ -224,6 +282,9 @@ function collectHidden({ configPath, outputDir = null }) {
         // next.
         if (source === page.markdown) for (const title of titles) visible.push([title, ...textsOfMarkdown(stripLeadingH1(shownMd), { headings: true })].join('\n'));
         visible.push(...tableRunsOf(shownMd));
+        if (source === page.markdown && isPc && !pcKeepSections) {
+          visible.push(...sheetTexts(shownMd, shownFields, { system: playerConfig.system, playerConfig, linkMap, outputPath: page.outputPath, imageMap: playerImages }));
+        }
       }
     }
   }
@@ -263,7 +324,7 @@ function collectHidden({ configPath, outputDir = null }) {
       }
     }
     const why = verdict && verdict.player ? verdict.player.reason : 'not on the site';
-    add(hiddenOf(body), rel, `unpublished note: ${why}`);
+    add(hiddenOf(withoutPausedAfter(body, linkMap)), rel, `unpublished note: ${why}`);
   }
 
   // What a page's Connections section prints (lib/connections.js), made as the build makes it from the published

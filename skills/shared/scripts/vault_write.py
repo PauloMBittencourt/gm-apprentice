@@ -14,9 +14,12 @@
     vault_write.py VAULT timeline --under HEADING [--after HEADING]
                                [--file REL] [--write]                   < entries
     vault_write.py VAULT session-new --number N --title T [--play-date D]
-                               [--chapter C] [--export PATH | --upcoming] [--write]
+                               [--chapter C] [--export PATH | --upcoming]
+                               [--created-by WHO] [--write]
     vault_write.py VAULT play-notes-new --session INDEX [--play-date D]
-                               [--export PATH] [--write]
+                               [--export PATH] [--created-by WHO] [--write]
+    vault_write.py VAULT export-new --session INDEX --export PATH
+                               [--play-date D] [--created-by WHO] [--write]
     vault_write.py VAULT resolve --export PATH                (read-only)
     vault_write.py VAULT chapter-new --title T [--sort-order N]
                                [--status S] [--write]
@@ -40,6 +43,11 @@
                                [--section] [--headless [--gm-input [PART ...]]]
                                [--write]                                < markdown
     vault_write.py VAULT npc-merge NPC PC [--write]    (npc_merge.py; exit 0/1/2)
+    vault_write.py VAULT entity-new --type T --name N [--folder SUB]
+                               [--date YYYY-MM-DD] [--write]              < note
+                               (entity_new.py: an NPC, PC, place, group,
+                               creature, item, event, document, clue or
+                               heritage)
 
 Paths are vault-relative; a session index or Wrap-Up can also be named
 (`Session 05 - Beneath the Mill`, or either half). Without --write every command prints its plan and
@@ -129,6 +137,8 @@ class Batch:
         # lists as the batch found them (see `threads_scope`).
         self.tally: Counter[str] = Counter()
         self.scope: ThreadsScope | None = None
+        # name -> type of the notes later entity-new blocks of a batch make
+        self.coming: dict[str, str] = {}
 
     def guard(self, rel: str) -> None:
         """Refuse a path that is not a note inside the vault."""
@@ -425,6 +435,326 @@ def section_end(doc: Doc, head: Head) -> int:
     return len(doc.lines)
 
 
+@dataclass
+class Walk:
+    """One line as `comment_walk` reads it."""
+    inside: bool    # starts inside an HTML or %% comment
+    touches: bool   # holds comment syntax, or starts inside a comment
+    code: bool      # a code-fence line, or inside a fence
+    open: str       # what is still open at the line's end: "", "code
+                    # fence", "HTML comment" or "%% comment"
+
+
+def comment_walk(lines: list[str]) -> list[Walk]:
+    """Each line read for code fences, HTML comments and `%%` comments,
+    which hide text in Obsidian and on the site alike. `scan_body` models
+    no `%%` comment, so the lead's writer reads them here (#738). A `%%` in
+    an inline code span is literal, as the publish tool reads it."""
+    fence: str | None = None
+    html = pct = False
+    out: list[Walk] = []
+    for raw in lines:
+        line = raw.rstrip("\r\n")
+        inside = html or pct
+        if not inside:
+            delim, flag = vl.fence_step(line, fence)
+            if fence is not None or flag:
+                fence = delim
+                out.append(Walk(False, False, True,
+                                "code fence" if fence else ""))
+                continue
+        touches, i = inside, 0
+        spans = vl.inline_code_spans(line)
+        while i < len(line):
+            if html or pct:
+                close = "-->" if html else "%%"
+                j = line.find(close, i)
+                if j < 0:
+                    break
+                html = pct = False
+                i = j + len(close)
+                continue
+            a, b = line.find("<!--", i), line.find("%%", i)
+            while b >= 0 and vl.inside_spans(b, spans):
+                b = line.find("%%", b + 1)
+            if a < 0 and b < 0:
+                break
+            touches = True
+            if a >= 0 and (b < 0 or a < b):
+                html, i = True, a + 4
+            else:
+                pct, i = True, b + 2
+        out.append(Walk(inside, touches, False, "HTML comment" if html
+                        else "%% comment" if pct else ""))
+    return out
+
+
+def lead_stops(doc: Doc) -> tuple[int, Callable[[int], int]]:
+    """(the line after the frontmatter; `stop`): `stop(at)` is the index of
+    the first heading or gm-only/spoiler marker at or below line `at`, or
+    the note's end. A heading inside a comment is no stop (#738)."""
+    if not doc.states:
+        return len(doc.lines), lambda _at: len(doc.lines)
+    first = doc.states[0].lineno - 1
+    walk = comment_walk(doc.lines[first:])
+
+    def stop(at: int) -> int:
+        return next((s.lineno - 1 for s in doc.states
+                     if s.lineno - 1 >= at and (
+                         s.marker is not None or s.heading is not None
+                         and not s.comment
+                         and not walk[s.lineno - 1 - first].inside)),
+                    len(doc.lines))
+    return first, stop
+
+
+def title_at(doc: Doc, at: int) -> bool:
+    """Whether line `at` is a level-1 heading: an older scene's title line,
+    which the lead sits below (#758)."""
+    return any(s.lineno - 1 == at and s.heading is not None
+               and s.heading[0] == 1 for s in doc.states)
+
+
+def paused_at(doc: Doc, at: int) -> tuple[int, bool] | None:
+    """When line `at` opens the `## Paused` section scene-paused writes:
+    (the index one past the section, whether it ends with its `<!-- /paused
+    -->` line; without it, where it stops is a guess). Else None (#758)."""
+    span = vl.paused_span(doc.lines[at:]) if at < len(doc.lines) else None
+    if span is None or span[0] != 0:
+        return None
+    after = at + span[1]
+    return after, bool(vl.PAUSED_END_RE.match(
+        doc.lines[after - 1].rstrip("\r\n")))
+
+
+GM_OPEN_LINE_RE = re.compile(r"^\s*<!--\s*gm-only\s*-->\s*$", re.I)
+GM_CLOSE_LINE_RE = re.compile(r"^\s*<!--\s*/\s*gm-only\s*-->\s*$", re.I)
+
+
+def top_block_end(doc: Doc, at: int) -> int | None:
+    """When line `at` opens a gm-only block on a line of its own, closed on a
+    line of its own with no marker or heading between (an older scene's
+    hidden picture above its lead, #760): the index one past the closing
+    line. Else None: any other shape is left to the guards, which refuse it.
+    A block holding a heading is a section (the template's `## GM Notes`
+    straight under an empty lead), never skipped: the lead goes above it."""
+    if at >= len(doc.lines) or not GM_OPEN_LINE_RE.match(doc.lines[at]):
+        return None
+    for i in range(at + 1, len(doc.lines)):
+        line = doc.lines[i]
+        if GM_CLOSE_LINE_RE.match(line):
+            return i + 1
+        if ANY_MARKER_RE.search(line) or ATX_RE.match(line) or (
+                SETEXT_RE.match(line) and doc.lines[i - 1].strip()
+                and i - 1 > at):
+            return None
+    return None
+
+
+def lead_where(doc: Doc, first: int) -> str:
+    """Where `checked_lead` found the lead starting at `first`, in words."""
+    above = doc.lines[first - 1].rstrip("\r\n") if first > 0 else ""
+    if vl.PAUSED_END_RE.match(above):
+        return "below its ## Paused section"
+    if GM_CLOSE_LINE_RE.match(above):
+        return "below the gm-only block at its top"
+    if title_at(doc, first - 1):
+        return "below its title"
+    return "above its first heading"
+
+
+LEAD_SHAPE_RE = re.compile(r"^ {0,3}\*\*(?:Situation|Starts it|If the "
+                           r"players)\b", re.I)
+# The lines only a lead holds: an If-table may also sit in a later section.
+LEAD_OPENER_RE = re.compile(r"^ {0,3}\*\*(?:Situation|Starts it)\b", re.I)
+
+
+def lead_shape_below(doc: Doc, end: int,
+                     shape: re.Pattern[str] = LEAD_SHAPE_RE) -> int | None:
+    """The index of the first lead-shaped line (`**Situation:**`, `**Starts
+    it:**`, `**If the players...**`, or what `shape` matches) below line
+    `end`, outside code fences and comments, or None. Found under an empty
+    lead, it says the lead was misread: a write there would make a second
+    one (#758)."""
+    walk = comment_walk(doc.lines[end:])
+    return next((i for i in range(end, len(doc.lines))
+                 if not walk[i - end].code and not walk[i - end].inside
+                 and shape.match(doc.lines[i])), None)
+
+
+def opener_shown_below(doc: Doc, end: int, rel: str,
+                       hides: Iterable[str] = ()) -> int | None:
+    """The index of the first `**Situation:**` or `**Starts it:**` line below
+    line `end` that the site shows (outside code, comments, gm-only or
+    spoiler blocks and the sections `hides` names, as the publish tool reads
+    them), or None. A hidden one (an alternative opening in the GM Notes) is
+    no misread lead (#760)."""
+    lines = [ln.rstrip("\r\n") for ln in doc.lines[end:]]
+    read = tool_reading(lines, rel)
+    try:
+        withheld = vl.withheld_by(lines, hides)
+    except vl.PublishToolUnavailable as e:
+        raise WriteError(f"{rel}: the publish tool could not be asked how "
+                         f"the note reads ({e}); nothing written") from e
+    return next((end + i for i, (kept, code) in enumerate(read)
+                 if kept is not None and not code and withheld[i] is None
+                 and LEAD_OPENER_RE.match(kept)), None)
+
+
+ANY_MARKER_RE = re.compile(r"<!--\s*/?\s*(?:gm-only|spoiler)\s*-->", re.I)
+ATX_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
+SETEXT_RE = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+
+
+def tool_reading(lines: list[str], rel: str) -> list[tuple[str | None, bool]]:
+    """Each line as the publish tool's strips leave it (None when they cut
+    it), and whether it is code, the fences read from what is left as
+    `build_lines` reads them. The tool's answer, not a model of it."""
+    try:
+        cut = vl.cut_lines(lines)
+    except vl.PublishToolUnavailable as e:
+        raise WriteError(f"{rel}: the publish tool could not be asked how "
+                         f"the note reads ({e}); nothing written") from e
+    out: list[tuple[str | None, bool]] = []
+    fence: str | None = None
+    for kept in cut:
+        if kept is None:
+            out.append((None, False))
+            continue
+        fence, flag = vl.fence_step(kept, fence)
+        out.append((kept, fence is not None or flag))
+    return out
+
+
+LEAD_END = "⁣lead ends here"
+
+
+def checked_lead(doc: Doc, rel: str, hides: Iterable[str] = ()
+                 ) -> tuple[int, int, list[Walk]]:
+    """(first, end, walk) of the note's lead (#738): the body text above its
+    first heading or gm-only/spoiler marker, where a scene keeps its
+    Situation, Starts it and If-table. Below an older scene's `# Title`
+    line, a gm-only block at the top such as a hidden picture (#760) and a
+    paused scene's `## Paused` section (#758), in any order, each with
+    nothing visible above it: none of them is ever part of the lead. The
+    span is empty when the body opens with another
+    heading. The lead's lines are walked, refusing a lead no tool
+    should write: a frontmatter never closed (it would read as the lead), a
+    gm-only or spoiler marker part-way along a line, and, as the publish
+    tool reads the lead, one ending inside a comment or code fence (text
+    put there would be hidden, or shown as code) or holding a heading the
+    body reader missed (a `---` underline, or a heading after a fence
+    opened inside a comment): the lead is not what it seems. On a paused
+    scene (#758) it refuses a `## Paused` section with no end line, and
+    text above the section, where scene-paused writes none: either way
+    which text is the lead is a guess. It refuses a lead that is empty with
+    a lead-shaped line further down (#758), or that has no Situation or
+    Starts it line while the site shows one further down (#760; `hides`,
+    the vault's `player_site.hide.sections`, are not shown): the lead was
+    misread, and a write would make a second one."""
+    first, stop = lead_stops(doc)
+    end = stop(first)
+    if (first == 0 and doc.lines
+            and doc.lines[0].lstrip("\ufeff").strip() == "---"):
+        # The body reader found no frontmatter, yet the note opens with one.
+        raise WriteError(f"{rel}: its frontmatter is not closed; fix it "
+                         f"before writing the lead")
+
+    def visible_in(a: int, b: int) -> list[str]:
+        """The visible lines from `a` to `b`, as the publish tool reads them."""
+        return [kept for kept, _code in tool_reading(
+            [ln.rstrip("\r\n") for ln in doc.lines[a:b]], rel)
+            if kept is not None and kept.strip()]
+    top = first
+
+    def closed_to(at: int) -> bool:
+        """Whether the publish tool reads the body down to line `at` as
+        closed: no comment or code fence left open (one wrapped round a top
+        block would take the lead in)."""
+        read = tool_reading([ln.rstrip("\r\n") for ln in doc.lines[top:at]]
+                            + [LEAD_END], rel)
+        return read[-1] == (LEAD_END, False)
+    # What stands above the lead, in any order (scene-paused puts its
+    # section at the very top, above a title or a block): an older scene's
+    # `# Title` line, a gm-only block at the top such as a hidden picture
+    # (#760; no lead write touches it), and a paused scene's `## Paused`
+    # section (#758). Each is skipped only with nothing visible above it.
+    titled = paused_seen = False
+    while True:
+        below = top_block_end(doc, end)
+        if (not titled and title_at(doc, end) and not visible_in(first, end)
+                and closed_to(end + 1)):
+            titled, first = True, end + 1
+        elif (below is not None and not visible_in(first, end)
+              and closed_to(below)):
+            first = below
+        elif not paused_seen and (paused := paused_at(doc, end)) is not None:
+            if not paused[1]:
+                raise WriteError(
+                    f"{rel}: its ## Paused section (line {end + 1}) has no "
+                    f"{vl.PAUSED_END} line, so where the lead starts below it "
+                    f"is a guess; put that line after the snapshot, or edit "
+                    f"by hand")
+            visible = visible_in(first, end)
+            if visible:
+                raise WriteError(
+                    f"{rel}: it has text above its ## Paused section "
+                    f"({visible[0].strip()!r}); a paused scene's lead goes "
+                    f"below the section's {vl.PAUSED_END} line: move it there, "
+                    f"or edit by hand")
+            if not closed_to(paused[0]):
+                raise WriteError(
+                    f"{rel}: its ## Paused section leaves a comment or code "
+                    f"fence open, so text below it would not read as "
+                    f"written; edit it by hand")
+            paused_seen, first = True, paused[0]
+        else:
+            break
+        end = stop(first)
+    walk = comment_walk(doc.lines[first:end])
+    for i in range(first, end):
+        if not walk[i - first].code and ANY_MARKER_RE.search(doc.lines[i]):
+            raise WriteError(f"{rel}: the lead holds a gm-only or spoiler "
+                             f"marker mid-line ({doc.lines[i].strip()!r}); "
+                             f"edit it by hand")
+    read = tool_reading([ln.rstrip("\r\n") for ln in doc.lines[first:end]]
+                        + [LEAD_END], rel)
+    if read[-1][0] != LEAD_END or read[-1][1]:
+        what = "a code fence" if read[-1][1] else "a comment"
+        raise WriteError(f"{rel}: the lead ends inside {what}, so text "
+                         f"written there would not read as written; edit it "
+                         f"by hand")
+    for i, (kept, code) in enumerate(read[:-1]):
+        above, above_code = read[i - 1] if i else (None, False)
+        if kept is not None and not code and (ATX_RE.match(kept) or (
+                SETEXT_RE.match(kept) and above is not None
+                and above.strip() and not above_code)):
+            # A `---` under a line is the tool's own setext risk rule.
+            shown = kept if ATX_RE.match(kept) else f"{above} / {kept}"
+            raise WriteError(f"{rel}: the lead seems to run past a heading "
+                             f"({shown.strip()!r}), so it is not what it "
+                             f"seems; edit it by hand")
+    # The lead was misread, and a write would make a second one, when it is
+    # empty and a lead-shaped line sits further down (#758), or when it has
+    # no Situation or Starts it line and one sits further down (#760: a
+    # draft's intro above `### Scene N:`, an older scene's above `## Setup`).
+    in_lead = [kept for kept, code in read[:-1]
+               if kept is not None and not code and kept.strip()]
+    if not in_lead:
+        shape = lead_shape_below(doc, end)
+    elif any(LEAD_OPENER_RE.match(k) for k in in_lead):
+        shape = None
+    else:
+        shape = opener_shown_below(doc, end, rel, hides)
+    if shape is not None:
+        raise WriteError(
+            f"{rel}: line {shape + 1} ({doc.lines[shape].strip()!r}) below "
+            f"the lead reads like a lead, and the lead "
+            f"{lead_where(doc, first)} has none, so the lead is not where it "
+            f"seems; edit the note by hand")
+    return first, end, walk
+
+
 def _tight_with(above: str, first: str) -> bool:
     """Whether `first` follows `above` with no blank line between: a list
     item under a list item, or a table row under a table row."""
@@ -591,11 +921,13 @@ def raw_value(text: str, name: str) -> str | None:
     return None if value is None else strip_comment(value).strip()
 
 
-def find_play_notes(batch: Batch, index: str, stem: str) -> list[str]:
-    """Stems of the Play Notes notes in the index's own folder whose
-    `session:` link names this index."""
+def find_play_notes(batch: Batch, index: str, stem: str,
+                    key: str = "play_notes") -> list[str]:
+    """Stems of the notes of one play record (`key`: play_notes or
+    export) in the index's own folder whose `session:` link names this
+    index."""
     folder = index.rpartition("/")[0]
-    types = vc.SESSION_DOC_TYPES["play_notes"][1]
+    types = vc.SESSION_DOC_TYPES[key][1]
     want = vl.normalize(stem)
     out = []
     for rel, text in vl.vault_files(batch.vault, folder or None):
@@ -638,20 +970,35 @@ def cmd_wrapup_new(batch: Batch, args: argparse.Namespace, _text: str) -> None:
         have = batch.with_stem(stem_of.rsplit("/", 1)[-1].strip())
         if have:
             raise WriteError(f"{index}: already has a Wrap-Up: {have[0]}")
-    notes = documents.get("play_notes") or ""
-    if is_blank(notes):
-        notes = ""
-    notes_warning = ""
-    if not notes:
-        hits = find_play_notes(batch, index, stem)
+    # The source is the Export, which holds the whole table record, else
+    # the Play Notes: a link that names a note, else the one note that
+    # names the session. Several notes of one record leave it blank. When
+    # nothing is found, a link as written stands (its note may come later).
+    notes, notes_warning, as_written = "", "", ""
+    for key in ("export", "play_notes"):
+        link = documents.get(key) or ""
+        if is_blank(link):
+            link = ""
+        if link and batch.with_stem(
+                re.split(r"[#^|]", vl.wikilink_target(link), maxsplit=1)[0]
+                .replace("\\", "/").rsplit("/", 1)[-1].strip()):
+            notes = link
+            break
+        if link and (key == "play_notes" or not as_written):
+            as_written = link   # the Play Notes link wins, as before
+        hits = find_play_notes(batch, index, stem, key)
         if len(hits) == 1:
             notes = f"[[{hits[0]}]]"
-        else:
-            notes_warning = (
-                "no Play Notes found for this session: source_document "
-                "left blank" if not hits else
-                "several Play Notes notes link this session: "
-                "source_document left blank")
+            break
+        if hits:
+            notes_warning = (f"several {PLAY_RECORDS[key][1]} notes link "
+                             "this session: source_document left blank")
+            break
+    if not notes and not notes_warning:
+        notes = as_written
+    if not notes and not notes_warning:
+        notes_warning = ("no Play Notes or Export found for this session: "
+                         "source_document left blank")
     values = {
         "session": f'"[[{stem}]]"',
         "session_number": str(number),
@@ -1901,6 +2248,33 @@ def _status_region(doc: Doc) -> tuple[Head | None, list[int]]:
     return head, own_lines(doc, head, end)
 
 
+# The comment lines `status --show` prints, dropped when its output is
+# fed back; any other `#` line still reaches the heading check.
+SHOW_COMMENT_RE = re.compile(
+    rf"^# (no lede|left alone: .*|\S.* §{CURRENT_STATUS})\s*$")
+
+
+def stdin_status(text: str) -> tuple[list[str] | None, list[Field]]:
+    """(the lede, the fields) `status` was sent: plain lines before the
+    first field are the PC's new lede (`--show` prints the lede first, so
+    its output feeds straight back). `#` lines, as `--show` prints them,
+    are dropped."""
+    lines = [ln for ln in text.replace("\r\n", "\n").replace(
+        "\r", "\n").split("\n") if not SHOW_COMMENT_RE.match(ln)]
+    # Before the lede is taken: a heading must never pass as one.
+    if vl.fenced_headings("\n".join(lines)):
+        raise WriteError("stdin holds a heading: send labelled fields only")
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    lede: list[str] = []
+    while (lines and lines[0].strip() and not FIELD_RE.match(lines[0])
+           and not LIST_RE.match(lines[0]) and not lines[0][:1].isspace()):
+        lede.append(lines.pop(0).rstrip())
+    if lede and not any(ln.strip() for ln in lines):
+        return lede, []
+    return lede or None, stdin_fields("\n".join(lines))
+
+
 def stdin_fields(text: str) -> list[Field]:
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     while lines and not lines[-1].strip():
@@ -1981,9 +2355,35 @@ def status_target(batch: Batch, raw: str) -> tuple[str, str]:
     return rel, text
 
 
+def _lede(lines: list[str], rows: list[int],
+          fields: list[Field]) -> tuple[int, int] | None:
+    """(start, end) of the Current Status lede: the first run of plain
+    lines (no field, no list item, not inside a field) with a field still
+    after it (or in a section with no fields), so a lede under vitals
+    lines (`**HP:**`) counts and an aside after the last field does not. None when the section has none
+    (`shared/pc-body-structure.md`: optional, one line)."""
+    used = {i for f in fields for i in range(f.start, f.end)}
+    last = max((f.start for f in fields), default=-1)
+    span: list[int] = []
+    for i in rows:
+        line = lines[i]
+        plain = (i not in used and line.strip() and not FIELD_RE.match(line)
+                 and not LIST_RE.match(line) and not line[:1].isspace()
+                 and not line.startswith("<!--"))   # a fence marker
+        if span:
+            if plain and i == span[-1] + 1:
+                span.append(i)
+                continue
+            break
+        if plain and (i < last or not fields):
+            span.append(i)
+    return (span[0], span[-1] + 1) if span else None
+
+
 def show_status(batch: Batch, raw: str) -> str:
-    """The labelled fields of a PC's Current Status, verbatim, and a line
-    naming what else the section holds (left alone by `status`)."""
+    """The lede and labelled fields of a PC's Current Status, verbatim,
+    and a line naming what else the section holds (left alone by
+    `status`). The output feeds straight back to `status --write`."""
     rel, text = status_target(batch, raw)
     doc = parse(text)
     head, rows = _status_region(doc)
@@ -1991,15 +2391,21 @@ def show_status(batch: Batch, raw: str) -> str:
         return f"{rel}: no ## {CURRENT_STATUS}\n"
     fields = read_fields(doc.lines, rows)
     used = {i for f in fields for i in range(f.start, f.end)}
+    lede = _lede(doc.lines, rows, fields)
+    if lede:
+        used |= set(range(*lede))
     other = sum(1 for i in rows if i not in used and doc.lines[i].strip())
     subs = [f"{'#' * h.level} {h.title}" for h in doc.heads
             if head.idx < h.idx < section_end(doc, head)]
     out = [f"# {rel} §{CURRENT_STATUS}"]
+    if lede:
+        out += [doc.lines[i].rstrip() for i in range(*lede)]
+    else:
+        out.append("# no lede")
     # A blank line between fields marks where each run ends, so the text
     # fed back to `--write` splits the way the note does.
-    for n, f in enumerate(fields):
-        if n:
-            out.append("")
+    for f in fields:
+        out.append("")
         out += f.lines
     out.append(f"# left alone: {other} other lines"
                + "".join(f"; {s}" for s in subs))
@@ -2008,8 +2414,8 @@ def show_status(batch: Batch, raw: str) -> str:
 
 def cmd_status(batch: Batch, args: argparse.Namespace, text: str) -> None:
     rel, note = status_target(batch, args.pc)
-    given = stdin_fields(text)
-    write_fields(batch, rel, note, given)
+    lede, given = stdin_status(text)
+    write_fields(batch, rel, note, given, lede)
     if any(key(f.label) == key(th.PC_PATH[1].strip("*:")) for f in given):
         warn_dropped_threads(batch, rel, note)
 
@@ -2539,10 +2945,12 @@ def _anchor(have: list[Field]) -> Field | None:
 
 
 def write_fields(batch: Batch, rel: str, note: str,
-                 given: list[Field]) -> None:
+                 given: list[Field], lede: list[str] | None = None) -> None:
     """Put `given` into the PC note's Current Status: each replaces the
     field with its label, in that field's shape; a new label goes after
-    the last field; a missing section is created before Notes/GM Notes."""
+    the last field; a missing section is created before Notes/GM Notes.
+    `lede`, when sent, replaces the section's lede or goes in before its
+    first field."""
     doc = parse(note)
     if doc.problems:
         raise WriteError(f"{rel}: gm-only fence is unbalanced "
@@ -2551,6 +2959,9 @@ def write_fields(batch: Batch, rel: str, note: str,
     where = f"§{CURRENT_STATUS}/"
     if head is None:
         block = [f"## {CURRENT_STATUS}", ""]
+        if lede:
+            block += [*lede, ""]
+            batch.row("WOULD-ADD", rel, where + "lede", "new lede")
         for f in given:
             block += reshape(f, f.bullet)
             batch.row("WOULD-ADD", rel, where + f.label, "new field")
@@ -2574,6 +2985,26 @@ def write_fields(batch: Batch, rel: str, note: str,
         by_key.setdefault(key(f.label), f)
     edits: list[tuple[int, int, list[str]]] = []
     fresh: list[str] = []
+    if lede:
+        span = _lede(doc.lines, rows, have)
+        # A fence's closing marker sits among the section's own lines:
+        # never insert before it (that is inside the fence).
+        first = next((i for i in rows if doc.lines[i].strip()
+                      and not doc.lines[i].lstrip().startswith("<!--")), None)
+        if span is None:
+            # Before the section's first line (outside any fence there),
+            # so the next run finds it as the lede; an empty section takes
+            # it straight under the heading.
+            if first is None:
+                edits.append((head.idx + 1, head.idx + 1, ["", *lede]))
+            else:
+                edits.append((first, first, [*lede, ""]))
+            batch.row("WOULD-ADD", rel, where + "lede", "new lede")
+        elif [doc.lines[i].rstrip() for i in range(*span)] == lede:
+            batch.row("SKIP", rel, where + "lede", "unchanged")
+        else:
+            edits.append((span[0], span[1], lede))
+            batch.row("WOULD-ADD", rel, where + "lede", "replaced")
     for f in given:
         old = by_key.get(key(f.label))
         if old is None:
@@ -2850,6 +3281,42 @@ ENTRY_DATE_RE = re.compile(r"^[-*+]\s+\*\*(.+?)\*\*")
 LABEL_START_RE = re.compile(r"(?i)^(session|chapter)\b")
 
 
+def _year_date(value: object) -> bool:
+    """A date with a 4-digit year, never a label ("Session 3 (played
+    2026-11-01)")."""
+    text = str(value) if isinstance(value, (str, int)) else ""
+    return bool(YEAR_RE.search(text)) and not LABEL_START_RE.match(text)
+
+
+def dated_campaign(batch: Batch, timeline: str) -> bool:
+    """Whether the campaign keeps a calendar: some session's or event's
+    `in_game_date`, or a timeline entry's date, carries a 4-digit year.
+    A story told in "Day 2, morning" and "Night 1" has none, and that is
+    normal (#697); a campaign that gains a year later counts from then.
+    A note this batch has written is read as written; an example in a
+    code fence is no entry."""
+    fence = False
+    for line in timeline.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+            continue
+        dated = ENTRY_DATE_RE.match(line)
+        if not fence and dated and _year_date(dated.group(1)):
+            return True
+    texts = dict(vl.vault_files(batch.vault))
+    texts.update({rel: t for rel, t in batch.texts.items()
+                  if rel.endswith(".md") and t is not None})
+    for rel, text in texts.items():
+        fm = vl.extract_frontmatter(text) or {}
+        if vl.entity_type(fm) not in ("session", "event") or is_record(rel):
+            continue
+        value = fm.get("in_game_date") or fm.get("date")    # an event's old key
+        values = value if isinstance(value, list) else [value]
+        if any(_year_date(v) for v in values):
+            return True
+    return False
+
+
 def split_timeline(text: str) -> list[list[str]]:
     """The entries on stdin, exactly as written. A line that starts at the
     margin opens an entry; indented lines and blank lines between them
@@ -3047,6 +3514,7 @@ def cmd_timeline(batch: Batch, args: argparse.Namespace, text: str) -> None:
                   f"the entries go above '{'#' * later.level} {later.title}', "
                   f"which also holds entries: if they belong after it, "
                   f"use --under '{'#' * later.level} {later.title}'")
+    keeps_calendar: list[bool] = []   # dated_campaign, read once if asked
     for entry, fresh in plan:
         if not fresh:
             batch.row("SKIP", rel, where, "already there")
@@ -3059,12 +3527,21 @@ def cmd_timeline(batch: Batch, args: argparse.Namespace, text: str) -> None:
         date = dated.group(1) if dated else ""
         if not date or LABEL_START_RE.match(date):
             continue        # undated, or a label like "Session 2"
+        if YEAR_RE.search(date) and not TIME_OF_DAY_RE.search(date):
+            continue
+        if not keeps_calendar:
+            keeps_calendar.append(dated_campaign(batch, batch.read(rel)))
+        if not keeps_calendar[0]:
+            continue        # a story without a calendar: normal
         if TIME_OF_DAY_RE.search(date):
             batch.row("WARNING", rel, where, f"'{date}' has a time of day: "
-                      f"a published timeline cannot sort it")
-        elif not YEAR_RE.search(date):
+                      f"this campaign's dates carry years, and a date "
+                      f"sort cannot place this one (put the time in the "
+                      f"text)")
+        else:
             batch.row("WARNING", rel, where, f"'{date}' has no 4-digit "
-                      f"year: a published timeline cannot sort it")
+                      f"year: this campaign's dates carry years, and a "
+                      f"date sort cannot place this one")
 
 
 # --- session-new and promote-plan --------------------------------------------
@@ -3239,15 +3716,27 @@ def resolve_export(batch: Batch, entries: list[tuple[str, str]],
             for n, rels in names.items()}
     live = {n: rels for n, rels in live.items() if rels}
     index = links._index(live)
-    typed_cache: list[set[str]] = []
+    types_cache: list[tuple[dict[str, str], set[str]]] = []
+
+    def types() -> dict[str, str]:
+        """Each person's, place's and thing's type: read once, if asked."""
+        if not types_cache:
+            found = {rel: t for rel, note in vl.vault_files(batch.vault)
+                     if (t := vl.entity_type(vl.extract_frontmatter(note)))
+                     in NAME_TYPES}
+            types_cache.append((found, set(found)))
+        return types_cache[0][0]
 
     def typed() -> set[str]:
-        """The people, places and things: read once, and only if asked."""
-        if not typed_cache:
-            typed_cache.append({
-                rel for rel, note in vl.vault_files(batch.vault)
-                if vl.entity_type(vl.extract_frontmatter(note)) in NAME_TYPES})
-        return typed_cache[0]
+        types()
+        return types_cache[0][1]
+
+    def fits(rel: str, tag: str, section: str) -> bool:
+        """A `part` match (a word or two in common) only of a note of the
+        section's kind: "The Wayside Shrine" is not its battle map, and
+        "Gilt's Chest" is not Master Orrin Gilt. A close spelling is
+        offered whatever its kind."""
+        return tag != "part" or types().get(rel) in SECTION_TYPES[section]
 
     def direct(spelling: str) -> tuple[str, list[str]] | None:
         n = vl.normalize(spelling)
@@ -3283,6 +3772,8 @@ def resolve_export(batch: Batch, entries: list[tuple[str, str]],
             best: dict[str, str] = {}      # path -> its best tag
             for spelling in spellings:
                 for rel, tag in links.candidates(spelling, index, None):
+                    if not fits(rel, tag, section):
+                        continue
                     if (rel not in best or links.TAGS.index(tag)
                             < links.TAGS.index(best[rel])):
                         best[rel] = tag
@@ -3317,6 +3808,26 @@ _WORD4_RE = re.compile(r"\b[^\W\d_]{4,}\b")
 # Notes whose names a session's prose spells: who, where, what.
 NAME_TYPES = frozenset({"pc", "npc", "location", "faction", "organization",
                         "creature", "item"})
+# The kinds of note an export section's entry can be a part match for.
+# A group goes with either: a faction's lodge or guildhall is often
+# written up on the faction's own note.
+GROUP_TYPES = frozenset({"faction", "organization"})
+SECTION_TYPES = {"NPCs": frozenset({"pc", "npc", "creature"}) | GROUP_TYPES,
+                 "Locations": frozenset({"location"}) | GROUP_TYPES,
+                 "Items": frozenset({"item"})}
+# A sentence's start: the line's start, a list or quote marker, or a
+# sentence's end (closing quotes and brackets after it) that is not a
+# title's full stop ("Dr. Voss"); then spaces, opening quotes and
+# brackets, emphasis marks.
+_TITLES = ("Mr", "Mrs", "Ms", "Dr", "St", "Mt", "Fr", "Sr", "Jr", "Lt",
+           "Col", "Rev", "Sgt", "Capt", "Prof")
+# A line that starts a block of its own: a list item or a quote.
+_BLOCK_START_RE = re.compile(r"^\s*(?:[-*+>]|\d+[.)])\s")
+_SENTENCE_OPEN_RE = re.compile(
+    r"(?:^|^\s*(?:[-*+>]|\d+[.)])|"
+    + "".join(rf"(?<!\b{t})" for t in _TITLES)
+    + r"(?<!\be\.g)(?<!\bi\.e)[.!?:][\"'”’)\]*_]*)"
+    r"[\s\"'“‘(\[*_]*$")
 
 
 def prose_near(batch: Batch, text: str, live: dict[str, set[str]],
@@ -3340,14 +3851,32 @@ def prose_near(batch: Batch, text: str, live: dict[str, set[str]],
     lower = {w for w in _WORD4_RE.findall(text) if w[0].islower()}
     lower |= {d.casefold() for d in (*calendar.day_name,
                                      *calendar.month_name) if d}
-    prose = "\n".join(ln for ln in text.splitlines()
-                      if not ln.lstrip().startswith("#"))
     seen: dict[str, int] = {}
-    for word in _WORD4_RE.findall(prose):
-        if word[0].isupper():           # Ólafur as well as Oliver
-            seen[word] = seen.get(word, 0) + 1
+    mid: set[str] = set()     # capitalised somewhere other than a sentence start
+    before = ""               # the paragraph's text so far, for a wrapped line
+    for line in text.splitlines():
+        if line.lstrip().startswith("#") or not line.strip():
+            before = ""
+            continue
+        if _BLOCK_START_RE.match(line):
+            before = ""         # a list item or quote starts afresh
+        for m in _WORD4_RE.finditer(line):
+            word = m.group(0)
+            if word[0].isupper():       # Ólafur as well as Oliver
+                seen[word] = seen.get(word, 0) + 1
+                prefix = line[:m.start()]
+                # A soft line break carries the sentence on: "met\nPetrack".
+                if before and not prefix.strip():
+                    prefix = before.rstrip() + " "
+                if not _SENTENCE_OPEN_RE.search(prefix):
+                    mid.add(word)
+        before = line
     for word, count in seen.items():
         low = word.casefold()
+        # A word only ever capitalised to start a sentence is English
+        # ("Later"), not a name: a name turns up mid-sentence somewhere.
+        if word not in mid:
+            continue
         if low in known or low in named or low in lower:
             continue
         # Same first letter, and not a word built on the name (Bengali).
@@ -3363,14 +3892,32 @@ def prose_near(batch: Batch, text: str, live: dict[str, set[str]],
                   f"{cased.get(close[0], close[0])}{more}")
 
 
-def read_export(path: str) -> str:
-    """An export file's text, UTF-8, with LF line endings."""
+def read_export(path: str, vault: Path | None = None) -> str:
+    """An export file's text, UTF-8, with LF line endings. The path as
+    given (a download anywhere), else relative to the vault: an Export
+    note already filed is named as every other note is (#766)."""
+    given = Path(path)
+    if vault is not None and not given.is_absolute() \
+            and not given.exists() and (vault / given).is_file():
+        given = vault / given
     try:
-        text = Path(path).read_bytes().decode("utf-8-sig")
+        text = given.read_bytes().decode("utf-8-sig")
     except (OSError, UnicodeDecodeError) as e:
         raise WriteError(f"{path}: unreadable "
                          f"({e.__class__.__name__})") from e
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def check_date(value: str | None, flag: str) -> None:
+    """Refuse a date that is not a real YYYY-MM-DD one."""
+    if not value:
+        return
+    try:
+        ok = bool(ISO_DATE_RE.fullmatch(value)) and bool(date.fromisoformat(value))
+    except ValueError:
+        ok = False
+    if not ok:
+        raise WriteError(f"{flag} must be a real date, YYYY-MM-DD")
 
 
 def check_play_date(value: str | None) -> None:
@@ -3385,10 +3932,12 @@ def check_play_date(value: str | None) -> None:
         raise WriteError("--play-date must be a real date, YYYY-MM-DD")
 
 
-def play_notes_naming(batch: Batch, stem: str) -> list[str]:
-    """Vault-relative paths (without .md) of the Play Notes notes anywhere
-    in the vault whose `session:` link names the index `stem`."""
-    types = vc.SESSION_DOC_TYPES["play_notes"][1]
+def play_notes_naming(batch: Batch, stem: str,
+                      key: str = "play_notes") -> list[str]:
+    """Vault-relative paths (without .md) of the notes of one play record
+    (`key`: play_notes or export) anywhere in the vault whose `session:`
+    link names the index `stem`."""
+    types = vc.SESSION_DOC_TYPES[key][1]
     want = vl.normalize(stem)
     out = []
     for rel, text in vl.vault_files(batch.vault):
@@ -3406,64 +3955,80 @@ BEFORE_PLAY = frozenset({"", "planned", "prepped"})
 
 
 def cmd_resolve(batch: Batch, args: argparse.Namespace, _text: str) -> None:
-    export = read_export(args.export)
+    export = read_export(args.export, batch.vault)
     resolve_export(batch, export_entries(export), export)
 
 
-def play_notes_text(stem: str, n: int, chapter_raw: str | None,
-                    campaign_raw: str | None, play_date: str | None,
-                    export_path: str | None, export: str) -> str:
-    """A Play Notes note for the session index `stem`: its frontmatter,
-    and the export, if any, whole under `## Narrative Record`."""
-    note_fm = ["type: session-play-notes", f'session: "[[{stem}]]"',
+# Who files a play record, as its `created_by` says (--created-by).
+CREATED_BY = ("session-play", "vault-ingest", "manual")
+
+# Each play record: (its label, the file name's suffix, its `type:`).
+PLAY_RECORDS = {
+    "play_notes": ("Play Notes", "Play Notes", "session-play-notes"),
+    "export": ("an Export", "Export", "session-export"),
+}
+
+
+def record_text(key: str, stem: str, n: int, chapter_raw: str | None,
+                campaign_raw: str | None, play_date: str | None,
+                export_path: str | None = None, export: str = "",
+                created_by: str = "manual") -> str:
+    """A play record for the session index `stem`: Play Notes (empty), or
+    an Export holding the export whole and unedited."""
+    _label, suffix, rtype = PLAY_RECORDS[key]
+    note_fm = [f"type: {rtype}", f'session: "[[{stem}]]"',
                f"session_number: {n}"]
     if chapter_raw:
         note_fm.append(f"chapter: {chapter_raw}")
+    # A raw table record: off the player site even in a vault with no
+    # publish list. The GM site still pages it (decideGmPage).
     note_fm += [f"campaign: {campaign_raw or chr(34) * 2}",
-                "canon_status: AUTHORITATIVE", "created_by: manual"]
+                "canon_status: AUTHORITATIVE", f"created_by: {created_by}",
+                "publish: false"]
+    if export_path:
+        note_fm.append(f"source_file: {json.dumps(Path(export_path).name)}")
     if play_date:
         note_fm.append(f'play_date: "{play_date}"')
     note_fm.append("tags: []")
     text = ("---\n" + "\n".join(note_fm) + "\n---\n\n"
-            f"# {stem} - Play Notes\n")
+            f"# {stem} - {suffix}\n")
     if export_path:
-        text += (f"\n## Narrative Record\n\nExport "
-                 f"`{Path(export_path).name}`, placed whole and "
-                 f"unedited.\n\n" + export)
+        text += "\n" + export
     return text
 
 
-def cmd_play_notes_new(batch: Batch, args: argparse.Namespace,
-                       _text: str) -> None:
-    """Play Notes beside an index already filed: the note, and on the
-    index documents.play_notes, play_date (when given) and status played
-    (from planned or prepped only). The Plan link stays as it is."""
-    check_play_date(args.play_date)
-    export = read_export(args.export) if args.export else ""
-    index = batch.note_named(args.session, {"session"}, "--session")
+def file_record(batch: Batch, index: str, key: str, play_date: str | None,
+                export_path: str | None = None, export: str = "",
+                created_by: str = "manual") -> str:
+    """File one play record beside an index (already filed, or created
+    earlier in this batch): the note, and on the index `documents.<key>`,
+    play_date (when given) and status played (from planned or prepped
+    only). The other records and the Plan link stay as they are. Returns
+    the new note's path."""
+    label, suffix, _rtype = PLAY_RECORDS[key]
     text = batch.read(index)
     fm = vl.extract_frontmatter(text) or {}
     if vl.entity_type(fm) != "session":
         raise WriteError(f"{index}: not a session index (type: session)")
     stem = Path(index).stem
     documents = vl.nested_mapping(text, "documents")
-    link = vl.wikilink_target(documents.get("play_notes"))
+    link = vl.wikilink_target(documents.get(key))
     replaced = ""
     if link and not is_blank(link):
         linked = batch.with_stem(re.split(r"[#^|]", link, maxsplit=1)[0]
                                  .replace("\\", "/").rsplit("/", 1)[-1].strip())
-        types = vc.SESSION_DOC_TYPES["play_notes"][1]
+        types = vc.SESSION_DOC_TYPES[key][1]
         for rel in linked:
             if vl.entity_type(vl.extract_frontmatter(batch.read(rel))
                               or {}) not in types:
                 raise WriteError(
-                    f"{index}: documents.play_notes links {rel}, which is "
-                    f"not Play Notes: fix that link first")
-            raise WriteError(f"{index}: already has Play Notes: {rel}")
+                    f"{index}: documents.{key} links {rel}, which is "
+                    f"not {suffix}: fix that link first")
+            raise WriteError(f"{index}: already has {label}: {rel}")
         replaced = f" (replaces [[{link}]], which names no note)"
-    have = play_notes_naming(batch, stem)
+    have = play_notes_naming(batch, stem, key)
     if have:
-        raise WriteError(f"{index}: already has Play Notes: {have[0]}")
+        raise WriteError(f"{index}: already has {label}: {have[0]}")
     n = vl.parse_session_number(fm.get("session_number"))
     if n is None:
         n = vl.session_ref_number(fm)
@@ -3477,19 +4042,22 @@ def cmd_play_notes_new(batch: Batch, args: argparse.Namespace,
     old_date = (raw_value(text, "play_date") or "").strip("\"'")
     if is_blank(old_date):
         old_date = ""
-    played = args.play_date or old_date
+    played = play_date or old_date
     if played and not ISO_DATE_RE.fullmatch(played):
         batch.row("WARNING", index, "", f"play_date {played!r} is not "
-                  "YYYY-MM-DD, so the Play Notes do not copy it")
+                  f"YYYY-MM-DD, so the {suffix} do not copy it"
+                  if key == "play_notes" else
+                  f"play_date {played!r} is not YYYY-MM-DD, so the "
+                  f"{suffix} does not copy it")
     folder = index.rpartition("/")[0]
-    notes_stem = f"{stem} - Play Notes"
-    notes_rel = f"{folder}/{notes_stem}.md" if folder else f"{notes_stem}.md"
-    notes_text = play_notes_text(
-        stem, n, chapter_raw, campaign_raw,
+    rec_stem = f"{stem} - {suffix}"
+    rec_rel = f"{folder}/{rec_stem}.md" if folder else f"{rec_stem}.md"
+    rec_text = record_text(
+        key, stem, n, chapter_raw, campaign_raw,
         played if ISO_DATE_RE.fullmatch(played) else None,
-        args.export, export)
-    batch.create(notes_rel, notes_text)
-    schema_check(batch, notes_rel, notes_text)
+        export_path, export, created_by)
+    batch.create(rec_rel, rec_text)
+    schema_check(batch, rec_rel, rec_text)
 
     lines = text.splitlines(keepends=True)
     end, error = vl.frontmatter_span(lines)
@@ -3498,15 +4066,15 @@ def cmd_play_notes_new(batch: Batch, args: argparse.Namespace,
     eol = "\r\n" if "\r\n" in text else "\n"
     fm_lines = lines[1:end]
     try:
-        vl.set_nested_key(fm_lines, "documents", "play_notes",
-                          f'"[[{notes_stem}]]"', eol)
+        vl.set_nested_key(fm_lines, "documents", key,
+                          f'"[[{rec_stem}]]"', eol)
     except ValueError as e:
         raise WriteError(f"{index}: {e}") from None
-    changes = [f"documents.play_notes [[{notes_stem}]]{replaced}"]
-    if args.play_date and args.play_date != old_date:
-        vl.set_key(fm_lines, "play_date", f'"{args.play_date}"', eol)
-        changes.append(f"play_date {old_date} -> {args.play_date}"
-                       if old_date else f"play_date {args.play_date}")
+    changes = [f"documents.{key} [[{rec_stem}]]{replaced}"]
+    if play_date and play_date != old_date:
+        vl.set_key(fm_lines, "play_date", f'"{play_date}"', eol)
+        changes.append(f"play_date {old_date} -> {play_date}"
+                       if old_date else f"play_date {play_date}")
     status = (raw_value(text, "status") or "").strip("\"'").casefold()
     if status in BEFORE_PLAY:
         at = next((i for i, ln in enumerate(fm_lines)
@@ -3520,14 +4088,45 @@ def cmd_play_notes_new(batch: Batch, args: argparse.Namespace,
                 "status: played", fm_lines[at])
         changes.append(f"status {status or '(none)'} -> played")
     batch.put(index, "".join([lines[0], *fm_lines, *lines[end:]]))
-    batch.row("WOULD-CREATE", notes_rel, "",
-              f"export {Path(args.export).name} under ## Narrative Record"
-              if args.export else "no export: the notes are empty")
-    if args.export and not export.strip():
-        batch.row("WARNING", notes_rel, "", "the export is empty")
-    batch.row("WOULD-ADD", index, "", ", ".join(changes))
+    if key == "export":
+        batch.row("WOULD-CREATE", rec_rel, "",
+                  f"export {Path(export_path or '').name}, whole and "
+                  "unedited")
+        if not export.strip():
+            batch.row("WARNING", rec_rel, "", "the export is empty")
+    else:
+        batch.row("WOULD-CREATE", rec_rel, "", "the notes are empty")
+    if batch.originals.get(index, "") is not None:
+        # An index this batch creates is one CREATE row, not an add too.
+        batch.row("WOULD-ADD", index, "", ", ".join(changes))
+    return rec_rel
+
+
+def cmd_play_notes_new(batch: Batch, args: argparse.Namespace,
+                       _text: str) -> None:
+    """Play Notes beside an index already filed; with --export, the
+    export beside them as its own Export note."""
+    check_play_date(args.play_date)
+    export = read_export(args.export, batch.vault) if args.export else ""
+    index = batch.note_named(args.session, {"session"}, "--session")
+    file_record(batch, index, "play_notes", args.play_date,
+                created_by=args.created_by)
     if args.export:
+        file_record(batch, index, "export", args.play_date,
+                    args.export, export, args.created_by)
         resolve_export(batch, export_entries(export), export)
+
+
+def cmd_export_new(batch: Batch, args: argparse.Namespace,
+                   _text: str) -> None:
+    """A table-assistant export beside a session index already filed, as
+    its own Export note: Play Notes there or not, it leaves them alone."""
+    check_play_date(args.play_date)
+    export = read_export(args.export, batch.vault)
+    index = batch.note_named(args.session, {"session"}, "--session")
+    file_record(batch, index, "export", args.play_date, args.export, export,
+                args.created_by)
+    resolve_export(batch, export_entries(export), export)
 
 
 def cmd_session_new(batch: Batch, args: argparse.Namespace,
@@ -3542,8 +4141,9 @@ def cmd_session_new(batch: Batch, args: argparse.Namespace,
     check_play_date(args.play_date)
     upcoming = args.upcoming
     if upcoming and args.export:
-        raise WriteError("--upcoming has no Play Notes to place an export in")
-    export = read_export(args.export) if args.export else ""
+        raise WriteError("--upcoming is a session not yet played: it has "
+                         "no export")
+    export = read_export(args.export, batch.vault) if args.export else ""
     # A chapter with sessions but no chapter note is still named by them.
     found = (find_chapter(batch.vault, args.chapter, missing_ok=True)
              if args.chapter else None)
@@ -3646,8 +4246,9 @@ def cmd_session_new(batch: Batch, args: argparse.Namespace,
     index_text = "---\n" + "\n".join(fm + carried) + "\n---\n" + body
     batch.create(index_rel, index_text)
     schema_check(batch, index_rel, index_text)
-    notes_text = play_notes_text(stem, n, chapter_raw, campaign_raw,
-                                 args.play_date, args.export, export)
+    notes_text = record_text("play_notes", stem, n, chapter_raw,
+                             campaign_raw, args.play_date,
+                             created_by=args.created_by)
     if not upcoming:
         batch.create(notes_rel, notes_text)
         schema_check(batch, notes_rel, notes_text)
@@ -3658,15 +4259,135 @@ def cmd_session_new(batch: Batch, args: argparse.Namespace,
               + (f"; its own keys carried: {', '.join(kept)}" if kept
                  else ""))
     if not upcoming:
-        batch.row("WOULD-CREATE", notes_rel, "",
-                  f"export {Path(args.export).name} under ## Narrative "
-                  f"Record" if args.export else "no export: the notes are "
-                  "empty")
+        batch.row("WOULD-CREATE", notes_rel, "", "the notes are empty")
     if not prev:
         batch.row("WARNING", index_rel, "", "no earlier session in this "
                   "chapter: campaign and the vault's own keys not carried")
     if args.export:
+        file_record(batch, index_rel, "export", args.play_date,
+                    args.export, export, args.created_by)
         resolve_export(batch, export_entries(export), export)
+
+
+# Who a plan's `participants` may be, and what its `locations` are.
+PLAN_PEOPLE = frozenset({"pc", "npc", "faction", "organization", "creature"})
+PLAN_PLACES = frozenset({"location"})
+
+
+class NoteLinks:
+    """Names and links resolved to notes, the way a link resolves: by
+    vault path when it has a folder, else by file name, and by alias only
+    when no file has that name. Built from the vault as the batch has left
+    it: a note an earlier block made or changed is read as it will be
+    written, not as the disk has it. `plan_cast` and `stamp-entities`
+    (#761) write their link lists through it."""
+
+    def __init__(self, batch: Batch) -> None:
+        self.stems: dict[str, list[str]] = {}
+        self.aliases: dict[str, list[str]] = {}
+        self.kinds: dict[str, str] = {}
+        for rel in sorted(batch._files().values()):
+            if is_record(rel) or vl.is_skipped_path(rel):
+                continue
+            text = batch.read(rel)
+            self.kinds[rel] = vl.entity_type(
+                vl.extract_frontmatter(text) or {})
+            self.stems.setdefault(vl.normalize(Path(rel).stem),
+                                  []).append(rel)
+            for alias in vl.frontmatter_aliases(text):
+                self.aliases.setdefault(vl.normalize(alias), []).append(rel)
+
+    def find(self, raw: str) -> list[str]:
+        """The live notes a link body or a name means."""
+        path = re.split(r"[#^]", vl.alias_split(raw), maxsplit=1)[0].strip()
+        if path.casefold().endswith(".md"):
+            path = path[:-3]
+        if "/" in path.strip("/"):
+            # A path says which note: when no note is there, none is
+            # meant, least of all another folder's note of that name.
+            want = vl.normalize(path.strip("/"))
+            return sorted(rel for rel in self.kinds
+                          if ("/" + vl.normalize(rel[:-3])).endswith(
+                              "/" + want))
+        name = vl.link_target(raw)
+        return sorted(self.stems.get(name) or set(self.aliases.get(name, ())))
+
+    def link_to(self, rel: str) -> str:
+        """What a link to `rel` is written as: its file name, or its
+        vault path when another note has that file name."""
+        stem = Path(rel).stem
+        return stem if len(self.stems[vl.normalize(stem)]) == 1 else rel[:-3]
+
+    def named(self, raw: str, flag: str, want: Collection[str] | None,
+              warn: Callable[[str], None]) -> str:
+        """The link body for a name or link the caller gives. One no note
+        has is kept as written, with a warning (a red link is the GM's
+        to-do); one two notes share is refused. `want` is the types the
+        note may be, or None for any: another type is a warning."""
+        value = bare_link(raw)
+        if not value or re.search(r'["\r\n]', value):
+            raise WriteError(f"{flag} {raw!r} cannot be a link "
+                             f"(no quote or line break)")
+        hits = self.find(value)
+        if len(hits) > 1:
+            raise WriteError(
+                f"{flag} {raw!r} matches {', '.join(hits)}: pass the vault "
+                f"path of the one meant, e.g. {flag} \"{hits[0][:-3]}\"")
+        if not hits:
+            value = re.split(r"[|#^]", value, maxsplit=1)[0].strip()
+            value = value[:-3] if value.casefold().endswith(".md") else value
+            warn(f"{flag} {value!r}: no note of that name yet (linked as "
+                 f"written)")
+            return value
+        if want is not None and self.kinds[hits[0]] not in want:
+            warn(f"{flag} {value!r}: {hits[0]} is type "
+                 f"{self.kinds[hits[0]] or 'none'}")
+        return self.link_to(hits[0])
+
+
+def plan_cast(batch: Batch, body: str, people: list[str], places: list[str],
+              target: str) -> tuple[list[str], list[str], str | None]:
+    """(participants, locations, the Campaign Overview's name) for a plan.
+
+    The two lists hold the notes the caller names with --participant and
+    --location, then the notes the body links to: a link is the writer's
+    own word for who and where, a name in prose is not (#464: "King" and
+    "Crow" are English words too). Each is written as the note's file
+    name (its vault path when two notes share one), resolved by
+    `NoteLinks`. One the caller gives that no note has is kept, with a
+    warning; one two notes share is refused, and a body link two notes
+    share is left out with a warning."""
+    notes = NoteLinks(batch)
+    kinds, find, link_to = notes.kinds, notes.find, notes.link_to
+    overview = vl.campaign_overview((rel, {"type": kind})
+                                    for rel, kind in kinds.items())
+
+    def named(raw: str, flag: str, want: frozenset[str]) -> str:
+        return notes.named(raw, flag, want, lambda message: batch.row(
+            "WARNING", target, "", message))
+
+    out_people = [named(x, "--participant", PLAN_PEOPLE) for x in people]
+    out_places = [named(x, "--location", PLAN_PLACES) for x in places]
+    import graph_check
+    shared: set[str] = set()
+    for link in graph_check.body_links(body):
+        hits = find(link)
+        cast = [rel for rel in hits if kinds[rel] in PLAN_PEOPLE | PLAN_PLACES]
+        if len(hits) > 1:
+            # Never a silent guess, and never a silent drop: the caller
+            # names the one meant.
+            if cast and link not in shared and not any(
+                    link_to(rel) in out_people + out_places for rel in cast):
+                shared.add(link)
+                batch.row("WARNING", target, "", f"[[{link}]] in the body "
+                          f"matches {', '.join(hits)}: left out; name the "
+                          f"one meant with --participant or --location")
+            continue
+        for rel in cast:
+            (out_people if kinds[rel] in PLAN_PEOPLE
+             else out_places).append(link_to(rel))
+    return (list(dict.fromkeys(out_people)), list(dict.fromkeys(out_places)),
+            link_to(overview) if overview else None)
 
 
 def cmd_promote_plan(batch: Batch, args: argparse.Namespace,
@@ -3681,6 +4402,39 @@ def cmd_promote_plan(batch: Batch, args: argparse.Namespace,
         body = text
     else:
         raise WriteError(f"{draft}: {error}")
+    part = ""
+    if args.section:
+        # One plan of a draft that holds several: that heading's section,
+        # heading and all, byte for byte.
+        doc = parse(body)
+        m = HEADING_ARG_RE.match(args.section)
+        level, title = (len(m.group(1)), m.group(2)) if m else (
+            None, args.section.strip())
+        hits = [h for h in doc.heads if key(h.title) == key(title)
+                and level in (None, h.level)]
+        if len(hits) != 1:
+            raise WriteError(
+                f"--section {args.section!r}: {draft} has "
+                + ("no such heading" if not hits
+                   else f"{len(hits)} headings of that title: give the one "
+                        f"meant with its hashes"
+                   if len({h.level for h in hits}) > 1
+                   else f"{len(hits)} '{'#' * hits[0].level} {hits[0].title}' "
+                        f"headings: promote the heading above the one "
+                        f"meant, or make their titles differ"))
+        # To the next heading of its level or above, markers and all: a
+        # gm-only or spoiler marker ends no section here (section_end stops
+        # at one, and would drop the text after it without a word).
+        end = next((h.idx for h in doc.heads if h.idx > hits[0].idx
+                    and h.level <= hits[0].level), len(doc.lines))
+        body = "".join(doc.lines[hits[0].idx:end])
+        _states, problems = scan_body(body)
+        if problems:
+            raise WriteError(
+                f"--section {args.section!r}: the section holds half of a "
+                f"gm-only or spoiler block ({problems[0]}): promote the "
+                f"heading above it, or close the block in the draft")
+        part = f", section '{hits[0].title}'"
     target = vl.normalize_file_arg(args.to)
     if not re.fullmatch(r"[\w-]+", args.plan_type):
         raise WriteError(f"--plan-type {args.plan_type!r} is not one word")
@@ -3706,12 +4460,24 @@ def cmd_promote_plan(batch: Batch, args: argparse.Namespace,
     set_block(fm, "leads_to", *link_list(
         [link_arg(x, "--leads-to") for x in args.leads_to or []]))
     set_block(fm, "relationships", "[]")
+    check_date(args.date, "--date")
+    people, places, overview = plan_cast(
+        batch, body, args.participant or [], args.location or [], target)
+    set_block(fm, "participants", *link_list(people))
+    set_block(fm, "locations", *link_list(places))
+    if overview:
+        # The vault's own Overview, whatever it is called: the template's
+        # name is only right for a vault that kept it.
+        set_block(fm, "campaign", vl.yaml_scalar(f"[[{overview}]]"))
+    if args.date:
+        set_block(fm, "lastUpdated", f'"{args.date}"')
     new = "---" + eol + eol.join(fm) + eol + "---" + eol + body
     batch.create(target, new)
     schema_check(batch, target, new)
     batch.row("WOULD-CREATE", target, "",
-              f"from {draft}: body copied as written ({len(body.encode())} "
-              f"bytes)")
+              f"from {draft}{part}: body copied as written ({len(body.encode())} "
+              f"bytes); participants {len(people)}, locations {len(places)}"
+              + ("" if args.date else "; no --date: lastUpdated left empty"))
 
 # --- plan ---------------------------------------------------------------------
 
@@ -3887,7 +4653,8 @@ def cmd_plan(batch: Batch, args: argparse.Namespace, text: str) -> None:
                              f"(and --chapter) to file one as upcoming")
         cmd_session_new(batch, argparse.Namespace(
             number=args.number, title=args.title, play_date=None,
-            chapter=args.chapter, upcoming=True, export=None), "")
+            chapter=args.chapter, upcoming=True, export=None,
+            created_by="manual"), "")
         index = next(rel for rel, before in batch.originals.items()
                      if before is None)
     index_text = batch.read(index)
@@ -4671,12 +5438,14 @@ def build_parser() -> argparse.ArgumentParser:
             "the margin; lines under it (an Open threads list) belong to it.\n"
             "Each field sent replaces the one with that label in\n"
             "## Current Status, in the note's own shape; a label the note\n"
-            "lacks is added after its last field. Fields not sent, the\n"
-            "lede, subsections and asides are left alone. --show prints\n"
-            "the fields as they stand, and reads no stdin."))
+            "lacks is added after its last field. Plain lines before the\n"
+            "first field are the PC's new lede (one present-tense line),\n"
+            "replacing the old one. Fields not sent, the lede when none\n"
+            "is sent, subsections and asides are left alone. --show\n"
+            "prints the lede and fields as they stand, and reads no stdin."))
     status.add_argument("pc", help="the PC note, vault-relative, or its name")
     how_status = status.add_mutually_exclusive_group()
-    how_status.add_argument("--show", action="store_true", help="print the PC's Current Status fields")
+    how_status.add_argument("--show", action="store_true", help="print the PC's Current Status lede and fields")
     how_status.add_argument("--write", action="store_true", help="write it (default: preview)")
     threads = sub.add_parser(
         "threads", help="add, move, close, rest, wake and hand threads (stdin rows)",
@@ -4748,8 +5517,9 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=raw, description=(
             "Files both beside the previous session, from the session\n"
             "template; the previous index's own keys come forward empty.\n"
-            "--export places a table-assistant export whole under\n"
-            "## Narrative Record and resolves its NPCs, Locations and\n"
+            "--export files a table-assistant export beside them as its\n"
+            "own <index> - Export note, whole and unedited, linked as\n"
+            "documents.export, and resolves its NPCs, Locations and\n"
             "Items: EXACT, ALIAS, NEAR (candidates) or NONE, one row each."))
     sn.add_argument("--number", type=int, required=True, help="the session's number")
     sn.add_argument("--title", required=True, help="the session's title")
@@ -4760,6 +5530,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="a session not yet played (prep): the index "
                     "alone, status planned, no Play Notes")
     sn.add_argument("--export", help="the export file (any path)")
+    sn.add_argument("--created-by", dest="created_by", choices=CREATED_BY,
+                    default="manual", help="the skill filing it, stamped as created_by on the play records (default manual)")
     sn.add_argument("--write", action="store_true", help="write it (default: preview)")
     pn = sub.add_parser(
         "play-notes-new", help="Play Notes beside a session index prep "
@@ -4768,31 +5540,66 @@ def build_parser() -> argparse.ArgumentParser:
             "documents.play_notes, play_date (with --play-date) and a\n"
             "planned or prepped status to played; the Plan link stays.\n"
             "Refused when Play Notes anywhere name the session. --export\n"
-            "works as in session-new."))
+            "works as in session-new; export-new files an export alone."))
     pn.add_argument("--session", required=True,
                     help="the session index: path or name")
     pn.add_argument("--play-date", dest="play_date", help="YYYY-MM-DD")
     pn.add_argument("--export", help="the export file (any path)")
+    pn.add_argument("--created-by", dest="created_by", choices=CREATED_BY,
+                    default="manual", help="the skill filing it, stamped as created_by on the play records (default manual)")
     pn.add_argument("--write", action="store_true", help="write it (default: preview)")
+    en = sub.add_parser(
+        "export-new", help="a table-assistant export beside a session "
+        "index, as its own Export note", formatter_class=raw, description=(
+            "Files <index> - Export beside the index, the export whole and\n"
+            "unedited, and sets its documents.export, play_date (with\n"
+            "--play-date) and a planned or prepped status to played.\n"
+            "Play Notes there or not, it leaves them alone, so it runs\n"
+            "after session-play as well as before. Refused when an Export\n"
+            "already names the session. Resolves the export's names as\n"
+            "session-new does."))
+    en.add_argument("--session", required=True,
+                    help="the session index: path or name")
+    en.add_argument("--export", required=True, help="the export file (any path)")
+    en.add_argument("--created-by", dest="created_by", choices=CREATED_BY,
+                    default="manual", help="the skill filing it, stamped as created_by on the play records (default manual)")
+    en.add_argument("--play-date", dest="play_date", help="YYYY-MM-DD")
+    en.add_argument("--write", action="store_true", help="write it (default: preview)")
     rs = sub.add_parser(
         "resolve", help="an export's names against the vault (read-only)",
         description="The name rows session-new prints, for an export "
                     "whose session is already filed; a §Prose NEAR row is "
                     "a name the running text may misspell.")
-    rs.add_argument("--export", required=True, help="the export file")
+    rs.add_argument("--export", required=True,
+                    help="the export file (any path, or the Export note's "
+                         "path in the vault)")
     rs.add_argument("--write", action="store_true", help=argparse.SUPPRESS)
     pp = sub.add_parser(
         "promote-plan", help="file a Midwife draft as a vault plan",
         formatter_class=raw, description=(
             "Scaffolds from the plan template, copies the draft's body\n"
-            "exactly and runs the schema check. participants and locations\n"
-            "are left for the caller to fill."))
+            "exactly and runs the schema check. campaign is the vault's\n"
+            "own Campaign Overview. participants and locations are the\n"
+            "notes named with --participant and --location, then the\n"
+            "people, groups, creatures and places the body links to; a\n"
+            "name in the body's prose is never matched. --section\n"
+            "promotes one heading's section of a draft that holds\n"
+            "several plans."))
     pp.add_argument("draft", help="the draft, vault-relative")
     pp.add_argument("--to", required=True, help="the plan, vault-relative")
     pp.add_argument("--plan-type", dest="plan_type", required=True, help="the plan's type, one word")
     pp.add_argument("--chapter", help="default: the chapter folder of --to")
     pp.add_argument("--leads-to", dest="leads_to", action="append",
-                    help="a plan this one leads to (repeatable)")
+                    help="a plan this one leads to")
+    pp.add_argument("--participant", action="append",
+                    help="an NPC, PC, faction or creature in the plan, by "
+                         "its note's name or alias")
+    pp.add_argument("--location", action="append",
+                    help="a place in the plan, by its note's name or alias")
+    pp.add_argument("--date", help="lastUpdated value, YYYY-MM-DD")
+    pp.add_argument("--section", help="copy this heading's section of the "
+                    "draft alone (its title, or the heading with its "
+                    "hashes): a draft that holds several plans")
     pp.add_argument("--write", action="store_true", help="write it (default: preview)")
     ch = sub.add_parser(
         "chapter-new", help="file a new chapter note",
@@ -4916,6 +5723,8 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--write", action="store_true", help="write it (default: preview)")
     import npc_merge    # its own module: it moves a note, which Batch cannot
     npc_merge.add_parser(sub)
+    import entity_new   # its own module: it imports this one
+    entity_new.add_parser(sub)
     ap.epilog = 'Example: gma vault-write "<vault>" wrapup-add "<wrap-up>" --write'
     bt = sub.add_parser(
         "batch", help="many writes, one plan, one commit",
@@ -4926,10 +5735,17 @@ def build_parser() -> argparse.ArgumentParser:
             "command's stdin. Commands: every writer here, plus\n"
             "'stamp FILE... <stamp-entities options>', 'note-new PATH'\n"
             "(body: the whole note), 'section NOTE HEADING\n"
-            "[--append|--replace]' (body: the text) and 'names [--wrapup\n"
+            "[--append|--replace]' (body: the text; 'section NOTE --lead'\n"
+            "writes the text above the note's first heading or hidden\n"
+            "block, a scene's Situation, Starts it and If-table),\n"
+            "'names [--wrapup\n"
             "WRAPUP]' (rows 'export spelling<TAB>vault spelling': each is\n"
             "replaced in every other block; --wrapup adds the Name\n"
-            "Conflicts table). A body line starting\n"
+            "Conflicts table) and 'sheet PC-NOTE KEY=VALUE...' (no body:\n"
+            "the PC's vitals, hp=41 hit-dice=1/5, into the Stat Sheet's own\n"
+            "cells by the publish tool's writers; a key with no row is a\n"
+            "WARNING; `gma publish sheet set --help` lists the keys). A body\n"
+            "line starting\n"
             "'===' is written '\\==='. Without --write: each block's rows,\n"
             "nothing written. With --write: every chosen block, or none if\n"
             "any is refused (all refusals listed), then the frontmatter,\n"
@@ -4944,10 +5760,25 @@ def build_parser() -> argparse.ArgumentParser:
                       help="leave these blocks out, for later")
     pick.add_argument("--only", metavar="N,M",
                       help="write only these blocks")
+    # #730: every writer says it is also a batch block, so several writes
+    # are previewed together and written all or nothing.
+    for name, parser in sub.choices.items():
+        if name in COMMANDS and name not in NOT_IN_BATCH:
+            hint = (f"Several writes at once: put this as a '=== {name} ...' "
+                    f"block in `gma vault-write <vault> batch FILE`.")
+            parser.description = (parser.description + "\n\n" + hint
+                                  if parser.description else hint)
     return ap
 
 
+def cmd_entity_new(batch: Batch, args: argparse.Namespace, text: str) -> None:
+    import entity_new
+    entity_new.run(batch, args, text)
+
+
 Command = Callable[[Batch, argparse.Namespace, str], None]
+# Commands batch will not run as a block (read-only: run them on their own).
+NOT_IN_BATCH = frozenset({"resolve"})
 COMMANDS: dict[str, Command] = {"wrapup-new": cmd_wrapup_new,
                                 "wrapup-add": cmd_wrapup_add,
                                 "wrapup-settle": cmd_wrapup_settle,
@@ -4959,6 +5790,7 @@ COMMANDS: dict[str, Command] = {"wrapup-new": cmd_wrapup_new,
                                 "timeline": cmd_timeline,
                                 "session-new": cmd_session_new,
                                 "play-notes-new": cmd_play_notes_new,
+                                "export-new": cmd_export_new,
                                 "resolve": cmd_resolve,
                                 "promote-plan": cmd_promote_plan,
                                 "plan": cmd_plan,
@@ -4967,8 +5799,10 @@ COMMANDS: dict[str, Command] = {"wrapup-new": cmd_wrapup_new,
                                 "scene-played": cmd_scene_played,
                                 "scene-paused": cmd_scene_paused,
                                 "prop-new": cmd_prop_new,
+                                "entity-new": cmd_entity_new,
                                 "prop-hand": cmd_prop_hand}
-NO_STDIN = frozenset({"wrapup-new", "session-new", "play-notes-new", "resolve",
+NO_STDIN = frozenset({"wrapup-new", "session-new", "play-notes-new",
+                      "export-new", "resolve",
                       "promote-plan", "chapter-new", "scene-new",
                       "scene-played", "prop-new", "prop-hand"})
 

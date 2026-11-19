@@ -9,22 +9,340 @@ Releases before 1.11.0 are in [docs/history/changelog-archive.md](docs/history/c
 
 ---
 
-## [1.12.35] — 2026-11-19
 
-### Removed
+## [1.12.93] — 2026-11-19
 
-- The harness's own Stop check, the old campaign-qa report gates and the checklist injected on loading a skill: the flow engine already does each, and in nine real sessions none of them caught anything the flows missed.
+### Added
+
+- Vampire: The Masquerade V20 system pack for ttrpg-expert: disciplines, humanity, skills, sects, creatures, weapons and session procedures.
+- The harness ships with the plugin: hooks that walk each skill through its steps and check each one from the outside. It acts only in a gm-apprentice vault and only watches until the vault opts in with `.claude/harness/modes.json` (see `docs/harness.md`).
+- A test fails when a skill drops or renames a reference file its harness flow reads.
+
+### Changed
+
+- The harness keeps only the layers that caught something in real sessions: the flow engine, the confirmation and form gates, the content check and the `_midwife/` guard. Its own Stop check, the old campaign-qa report gates and the checklist on loading a skill are gone.
 
 ### Fixed
 
 - The harness no longer stops a skill from asking the GM a question it must ask, reads "não toque nisso, pode gravar o resto" as a yes, lets index notes in `_World/` be written without a proposal, no longer takes reading the old audit report for writing it, and lets the-midwife delete a superseded note.
 
-## [1.12.34] — 2026-11-19
+## [1.12.92] — 2026-11-19
+
+### Fixed
+
+- Session prep can write a scene's Situation when a hidden picture block sits above it (#760); an older scene whose Situation sits under a heading further down is refused safely rather than given a second one.
+
+## [1.12.91] — 2026-11-19
 
 ### Added
 
-- The harness ships with the plugin: hooks that walk each skill through its steps and check each one from the outside. It acts only in a gm-apprentice vault and only watches until the vault opts in with `.claude/harness/modes.json` (see `docs/harness.md`).
-- A test fails when a skill drops or renames a reference file its harness flow reads.
+- The publish tool reads a session Plan into the run sheet's model, the first step of the GM's run sheet (#556); nothing on the site changes yet.
+
+## [1.12.90] — 2026-11-19
+
+### Fixed
+
+- `stamp-entities --set` of a list that already holds those items leaves the note alone and says UNCHANGED, whatever list shape it is written in (#778).
+
+## [1.12.89] — 2026-11-19
+
+### Fixed
+
+- `npc-stats --plan`, the run session prep uses, no longer asks for a stat block for a dead NPC the Plan names (a body found, a grave visited); a hidden fate beats `status`, so one who rises again takes a later fate such as **Risen.**; `--plan` also takes a full path to a Plan inside the vault (#776).
+
+## [1.12.88] — 2026-11-19
+
+### Fixed
+
+- After a workaround is answered `retire`, the update's report says nothing is retired yet and gives the `gma workaround retire` command to run once it is swapped for the built-in way (#774).
+
+## [1.12.87] — 2026-11-19
+
+### Changed
+
+- A wrap-up's unasked scene pictures put action first: the Direction still sets how many, and fights or chases come first, shown in motion (a long fight may take its opening, its turn and its end), then the dramatic beats, and a quiet beat or an aftermath only when nothing bigger happened (#770).
+
+## [1.12.86] — 2026-11-19
+
+### Fixed
+
+- The party page's portraits sat 12px low in their circles, the top of each circle empty: the article picture rule's margin reached them. The same margin no longer shifts the small pictures on the characters, NPC, faction and location lists (#769, tool 1.70.31).
+
+## [1.12.85] — 2026-11-19
+
+### Removed
+
+- A scene note's `scene_type` field and the Plan's `**Type:**` line: nothing read them, and they mixed a tone (horror) with what the players do. A routing or hub scene is marked by "(routing)" or "(hub)" in its title, or Scene 0; an old Plan's `**Type:** transition` still counts. The update removes the `scene_type` line from every scene note and changes nothing else in them (check `scene-type`); played Plans are left as they are (#759).
+
+## [1.12.84] — 2026-11-19
+
+### Fixed
+
+- `vault-write resolve --export` reads the Export note by its path in the vault, as every other `vault-write` command names a note; before, only an absolute path or one relative to the shell's folder worked, and the vault path said "unreadable" (#766).
+
+## [1.12.83] — 2026-11-18
+
+### Fixed
+
+- The leak check no longer flags a paused scene's `After [[Session]].` line, which the update tool writes and which says only the published session's title; the snapshot under it, and the line when its session is not on the site, are still hidden text (#765, tool 1.70.30).
+
+## [1.12.82] — 2026-11-18
+
+### Fixed
+
+- `gma stamp-entities --set` wrote a list as one quoted string, so a scene's `entities` and `locations` were set by hand; it now writes a JSON list as a real list, `--add` appends one item, and in link fields a bare name becomes a link to its note (#761).
+
+## [1.12.81] — 2026-11-18
+
+### Fixed
+
+- On a paused scene, `section --lead` reads and writes the Situation, Starts it and If-table below the `## Paused` snapshot instead of the empty space above it, and leaves the snapshot alone; on an older scene that opens with a `# Title` line it does the same below the title; an empty lead with a Situation further down is refused rather than written twice (#758).
+
+## [1.12.80] — 2026-11-18
+
+### Added
+
+- `gma vault-write <vault> entity-new --type pc` makes a PC note: the vault's own system sheet, filed in the PC folder, with the fields, ties and sections you send and the sheet's tables kept to fill; `--from-npc` lets an NPC who joins the party keep its name, ready for `npc-merge` (#750).
+
+## [1.12.79] — 2026-11-18
+
+### Changed
+
+- Session prep no longer asks the GM to pick or predict what the players do: it asks about the world, writes player-driven outcomes as `Do | Then` rows that answer the attempt, gives every PC a hook, and counts spotlight history from what the wrap-ups recorded (#719).
+
+## [1.12.78] — 2026-11-18
+
+### Fixed
+
+- `dnd-sheet` counts a Powerful Build row (Species Traits, Class Features or Feats) as one size larger, so a goliath with STR 12 gets 360 lb carrying capacity and 720 lb drag/lift/push, and says "incl. Powerful Build" (#751).
+
+## [1.12.77] — 2026-11-18
+
+### Fixed
+
+- The leak check no longer flags a PC sheet for printing its own class features or spells when a hidden NPC stat block uses the same words (a Monk PC's "Flurry of Blows (1 Focus)" against a monk villain's): it reads the sheet as the build makes it from the PC's own note, and hidden text that note does not hold is still found (#752, tool 1.70.29).
+
+## [1.12.74] — 2026-11-18
+
+### Added
+
+- A wrap-up now writes a PC's end-of-session vitals to the Stat Sheet as well as Current Status: a batch's `=== sheet <PC> hp=41 hit-dice=1/5` block sets them with the writers flush uses, shows them in the dry run, leaves alone any value not given, and says so when the sheet has no row for one. `gma publish sheet set` does the same from the command line, with the keys for D&D, Call of Cthulhu, Regency and GURPS in its help (#749, tool 1.70.28).
+
+### Fixed
+
+- After a wrap-up, the party page's Party Status board showed a PC's hit points from before the session, because the wrap-up changed only the Current Status text; the wrap-up now writes the same numbers to the sheet the board reads (#749, tool 1.70.28).
+
+## [1.12.73] — 2026-11-18
+
+### Fixed
+
+- `npc-stats` no longer asks for a stat block for an NPC who is secretly dead: it reads the current fate in the note's GM Notes Behind the Scenes, as session prep does, and leaves out one whose fate is **Dead.** while `status:` still says alive (#747).
+
+## [1.12.72] — 2026-11-18
+
+### Added
+
+- A scene's Situation, Starts it and If-table can be changed through vault-write: a batch's `=== section "<scene>" --lead --replace` (or `--append`, which adds a row to the If-table) writes the text above a note's first heading or hidden block, with the usual dry run and checks, and `gma section <vault> "<scene>" --lead` reads it (#738).
+
+### Fixed
+
+- A batch `section` block can no longer write text that leaves a code fence or comment open: before writing, the publish tool checks that everything below the new text shows on the site exactly as before, so nothing hidden is published and nothing visible disappears (#738).
+
+## [1.12.71] — 2026-11-18
+
+### Fixed
+
+- The session skills' first rule reads the PC roster from the PC notes (`gma vault-check <vault> active-pcs`, now with each PC's player and status; `--all` adds those out of play) instead of `_Campaign/Player Characters.md`, which a Midwife vault left empty and some vaults never had (#729).
+
+### Removed
+
+- The PC roster note (`_Campaign/Player Characters.md`) is gone: each PC's player and status live on the PC's own note, and new vaults no longer get one. The update (check `pc-roster-retired`) deletes an empty one with any empty `_Templates/` copy, asks before deleting one you wrote in (saying first anything the PC notes may not hold), and waits while it names a PC with no note of their own. Links to it become plain words, a frontmatter entry that is only the link comes out (any other is named for you), it leaves the publish list, and any line of your vault's CLAUDE.md or AGENTS.md that sends the agent to it is named for you to change. Archived and QA copies are left alone. The site makes its party page itself, the PCs' index with the Party Status board and a list of the PCs out of play; the old roster address sends readers there unless a page of yours is at it (tool 1.70.27, #729).
+
+## [1.12.70] — 2026-11-18
+
+### Fixed
+
+- The update now removes the adventure brief's `adventure_shape` line (check `adventure-shape`). 1.12.68 shipped that step marked with an earlier release, so a vault already past it skipped it. A test now holds each update check to the release that ships it (#745).
+
+## [1.12.69] — 2026-11-18
+
+### Added
+
+- `gma vault-check <vault> npc-stats` lists the NPCs with no real stat block (missing, a placeholder, blank, or a major NPC given only a stock block), and says which are major: a companion or one of the brief's Key NPCs. `--plan` keeps a Plan's NPCs, `--played` those met in play (#725).
+- Missing stat blocks get built once the game system is known: the Midwife builds a full workup for each major NPC at scaffold, session prep builds the blocks its Plan's scenes need, and campaign-qa's new NPC Stats check offers the rest for the GM's yes. With no system recorded, nothing is built: it becomes a question for the GM (#725).
+
+## [1.12.68] — 2026-11-18
+
+### Removed
+
+- The adventure brief's `adventure_shape` field, a one-word label (linear, branching…) that couldn't say what the GM chose and was read as the GM's decision. The shape lives in the brief's Adventure Shape section, in the GM's words, and the Midwife works it out that way. The update (check `adventure-shape`) removes the line, and asks first when the brief has a word there but no Adventure Shape section written (#735).
+
+## [1.12.67] — 2026-11-18
+
+### Fixed
+
+- Wrap-up states an NPC's hidden fate plainly in their GM Notes ("**Dead.**", "**Captive, in the ice crypt.**") and leaves `status:` at what the players know until they learn it. Prep reads that fate over `status:`, so a dead NPC isn't planned as a helper (#739).
+
+## [1.12.66] — 2026-11-18
+
+### Fixed
+
+- plan-check's duration rule no longer flags time left or gone on the session's clock ("with about 15 minutes left", "15 minutes of play are left", "30 minutes in"): that is the GM's pacing trigger, not a scene estimate (#726).
+
+## [1.12.65] — 2026-11-18
+
+### Fixed
+
+- A page no longer prints a lone template placeholder like `{To flesh out for colour.}`: the paragraph or bullet is left off, and so is a heading it empties. The build warns with the note and section, and campaign-qa's Site Faults check asks whether to fill it or remove the line. Only note-like braces with a space in them count (`{REDACTED}` and `{1d6}` stay), `\{…\}` keeps a literal, and PC sheets are skipped (#720, tool 1.70.26).
+
+## [1.12.64] — 2026-11-18
+
+### Added
+
+- House rules have a home: a `## House Rules` section in the Campaign Overview, one bullet per rule in your words. The player site gets its own House Rules page and menu link from it, and the play brief, prep bundle and wrap-up's carry read it; the Midwife asks for them at session 0. Existing vaults get the section when the first rule is written (#721, tool 1.70.25).
+
+## [1.12.62] — 2026-11-18
+
+### Fixed
+
+- The prep Threads list matches a thread to a Wrap-Up line that shares a place or other proper name no note is named for, such as "the Widow's Stair" (#733).
+- An NPC's given name no longer counts as that NPC inside someone else's full name: "Dorothea" of Miss Dorothea Bexley is not "Dorothea de Courlande" (#734).
+
+## [1.12.58] — 2026-11-17
+
+### Fixed
+
+- The prep Threads list no longer says a thread is "not in any wrap-up" when the last Wrap-Up lists it in other words. A thread and a Wrap-Up line (Pending Consequences too) that name the same person, place or thing now match, linked or bare, alias or first name, with `~`; when nothing matches it says "no match found in a wrap-up" (#718).
+
+## [1.12.57] — 2026-11-17
+
+### Changed
+
+- Several vault writes at once are easier to find: the shared tool table has a row for `gma vault-write <vault> batch`, and every writer's `--help` says it can be a block of one, previewed together and written all or nothing (#730).
+
+## [1.12.52] — 2026-11-17
+
+### Fixed
+
+- A value written as escaped empty quotes (`voice: \"\"`) no longer counts as a voice or a filled field: the voices check reads it as none, `gma vault-check <vault> frontmatter` warns on it and `--fix` rewrites it to `""` (campaign-qa offers it), and `entity-new` writes `""` when it is sent the escaped form (#715).
+- The Midwife's adventure brief and `_World/` notes are stamped as made before play, so `stale-drafts` can date them, and the next reconcile promotes the campaign's brief and world notes made before play whether or not the Wrap-Up links them (`reconcile-scan` says why; a stub is left out; `--except` holds a note back for one run). A brief written once sessions exist takes `entity-new --session N`, so it stays out of that set. The update stamps older ones (check `scaffold-pre-play`) (#717).
+
+## [1.12.51] — 2026-11-17
+
+### Fixed
+
+- Wrap-up keeps a PC's Current Status lede current: `vw status --show` prints the one-line lede above the fields, and a plain first line sent to `status` replaces it, so the line written before play no longer stays on the live PC page (#714).
+- The first wrap-up moves the Campaign Overview from `not_started` to `in_progress` (new `stamp --advance KEY=FROM:TO`); a paused, completed or abandoned campaign is never touched; a Current Arc still reading "Not yet begun." gets a two-sentence draft in the wrap-up's review, the rest of the section kept (#716).
+
+## [1.12.50] — 2026-11-17
+
+### Fixed
+
+- With drawing without asking off but a picture source set, wrap-up no longer skips its scene pictures in silence: its report ends with one line offering them, and draws nothing unless asked. `gma llms image` says Event notes get their picture as a recap scene, not one of their own (#712).
+
+## [1.12.49] — 2026-11-17
+
+### Fixed
+
+- A table assistant's moment (a bold beat, its italic context, then the quote said in it) is one Memorable Moments card on the Story page, not two, and `gma moments` tags it once, after the speaker line. A tag ends a moment, so a beat that carries its own tag, or a quote with a context line of its own, stays a card of its own: Canticle, Dead End and Special Forces render exactly as before (#705, tool 1.70.22).
+
+## [1.12.48] — 2026-11-17
+
+### Fixed
+
+- The leak check no longer stops a deploy over a Wrap-Up's GM-only World State date: the session page and its preview print the session's in-game date once a Wrap-Up pairs with it, so the same date in World State is no secret. A date the GM hides from players (`hide.fields`) is still checked (#704, tool 1.70.21).
+
+## [1.12.47] — 2026-11-17
+
+### Fixed
+
+- `manifest publish-played` names a played session whose index is Excluded (often excluded before play, as prep) as unclear, with the way out (`manifest apply --decide`), instead of skipping it in silence; it is still never published behind the GM's back (#703, tool 1.70.20).
+
+## [1.12.46] — 2026-11-17
+
+### Fixed
+
+- `gma update .`, run from inside a vault, names the vault in its report instead of a blank ("Updated  from …"); so does the scaffold's clean-up note (#709).
+
+## [1.12.42] — 2026-11-17
+
+### Changed
+
+- A story without a calendar is normal: timeline entries dated "Day 2, morning", "Night 1" or not at all no longer warn. The unsortable-date warning comes only once the campaign's dates carry a year (a session's, an event's or a timeline entry's), so a game that gains a calendar later is checked from then. The site's timeline no longer turns a relative date into one in 2001 ("Day 2" was 1 February 2001), so a story without a calendar gets no invented timeline; a month with no year ("1 March") is placed as before (tool 1.70.19). The date guidance and the templates say so (#697).
+
+## [1.12.41] — 2026-11-17
+
+### Fixed
+
+- Notes made at the table count as this session's: `entity-new --session` stamps `createdSession`, `asOfSession` and an empty `source` as `play`. Wrap-up's new entities and events and session-play's saved notes pass it, so reconcile no longer lists them as pre-play prep. A new event is linked from the Wrap-Up, so reconcile sees it (#698).
+- `gma reconcile-scan` finds a Wrap-Up by its name or `[[link]]`, as the vault-write commands do (#699).
+
+### Added
+
+- `gma reconcile-promote <vault> <wrap-up> --reconciled D [--write]` does reconcile's promotion in one step: the Wrap-Up promoted and stamped, the session index set to reviewed, and exactly the DRAFTs the scan lists as created or played this session promoted, never older ones. Nothing is copied across by hand, `--except` keeps a note the GM has not confirmed as DRAFT, and it writes every note or none. Reconcile's quick path and step 6 use it (#701).
+
+## [1.12.40] — 2026-11-17
+
+### Fixed
+
+- Fewer false near-matches when an export's names are resolved: a capitalised word that only ever starts a sentence ("Later") is no longer offered as a misspelt name, a "Dr." or "Mr." is no sentence end, and a word-in-common match is offered only for a note of the section's kind (a faction or organization fits a person or a place), so a place is never its battle map and an item named for a person is never that person (#694).
+- Play Notes and Export notes say who filed them: `session-new`, `play-notes-new` and `export-new` take `--created-by session-play | vault-ingest | manual` (default `manual`); session-play and vault-ingest pass their own name (#695).
+
+## [1.12.39] — 2026-11-17
+
+### Fixed
+
+- The update marks older Play Notes and Export notes `publish: false` when the vault has no publish list, so a site with no list stops showing raw table records to the players. A vault with a publish list is left alone: those notes are already off unless the GM listed them (check `play-records-publish`) (#692).
+
+## [1.12.38] — 2026-11-17
+
+### Added
+
+- A gmassistant.app export can join a session at any time, before or after session-play's Play Notes: `gma vault-write <vault> export-new --session "<index>" --export <file>` files it whole as its own Export note beside the index and links it as `documents.export`, leaving the Play Notes alone. Wrap-up reads both: the export's Summary for the recap, the Play Notes as the GM's jottings (#691).
+
+### Changed
+
+- `session-new --export` and `play-notes-new --export` file the export as its own Export note too, beside empty Play Notes, instead of inside them. A vault's existing Play Notes that already hold an export still wrap up as before.
+- The Play Notes and Export notes these commands file carry `publish: false`, so a raw table record stays off the player site even in a vault with no publish list; the GM site still shows them (older notes: #692).
+- The session template's `documents:` gains `export: null`; the update brings `_Templates/_Template_Session.md` up to date. The session check counts an Export as played, and the GM site gives it a page linked from the session's Story page, as it does the Play Notes (tool 1.70.18).
+
+## [1.12.37] — 2026-11-17
+
+### Changed
+
+- Session wrap-up and vault-ingest create a new NPC, place, group, item or event note through `entity-new`: the wrap-up sends the fields, the ties and the sections, and the command fills the template and writes `## Related` and `### Hidden Ties` from the ties, so a new note's Related list and its relationships can no longer disagree (#684).
+
+## [1.12.36] — 2026-11-17
+
+### Added
+
+- The adventure brief has a template, `_Templates/_Template_Adventure_Brief.md`: a new vault gets it, and the update copies it into an existing one (the `templates` check). `gma vault-write entity-new --type adventure-brief --name "<adventure>"` writes the brief at `Adventures/<adventure>/<adventure>.md` from the sections sent to it (#681).
+
+### Changed
+
+- The Midwife writes the adventure brief with that command. It sends the sections; the command puts the GM's under `## GM Notes` inside the gm-only fence and Open Questions in its spoiler block, and refuses a GM section written where players would read it.
+
+## [1.12.35] — 2026-11-17
+
+### Added
+
+- `gma vault-write entity-new` creates an NPC, place, group, creature, item, event, document, clue or heritage note from its template. You send the fields to set, the ties and the sections; it writes `## Related` and `### Hidden Ties` from the ties, puts every `###` section under GM Notes (inside the template's fence when it has one), and marks two-way ties. Several notes go in as blocks of one `batch`, and the Midwife's entity promotion uses it (#676).
+
+## [1.12.34] — 2026-11-16
+
+Publish tool 1.70.17.
+
+### Fixed
+
+- A new adventure's twist no longer reaches the player site through its brief: the Midwife writes the brief's public sections, and the Campaign Overview's Premise and Key Factions, as what the players are told at the start, and puts what they are to find out under GM Notes (The Truth, Adventure Shape, Escalation) (#678).
+- The Midwife's workspace (`_midwife/`), QA reports (`_QA/`) and the ingest inbox (`_inbox/`) are never published, on the player site or the GM site, and neither the publish list nor a build asks about their files, whatever your own list of hidden folders holds (#680).
+- A plan promoted from a Midwife draft links to your vault's own Campaign Overview; the plan template no longer names `[[Campaign_Overview_Updated]]`, a note a new vault never has (#677).
+- The site set-up creates the Cloudflare Pages project with `--force`: without it the current wrangler hands the create to Workers and fails, so the first deploy found no project (#679).
+- The Midwife's scaffold reads entity sketches from the folders the skill files them in (`npcs/`, `locations/`, `factions/` and the like), and says which `status` words a `_World` note takes.
+
+### Changed
+
+- `gma vault-write promote-plan` fills a plan's participants and locations from `--participant` and `--location` (a note's name, alias or vault path) and from the notes the plan links to, stamps `lastUpdated` with `--date`, and promotes one heading of a draft that holds several plans with `--section`.
 
 ## [1.12.33] — 2026-11-13
 
@@ -112,7 +430,7 @@ Releases before 1.11.0 are in [docs/history/changelog-archive.md](docs/history/c
 
 ### Changed
 
-- Live stats and the change-request inbox publish only on Cloudflare Pages, and the warning says why. A site with no host setting now defaults to Cloudflare Pages; the update first writes each existing site's host down (Cloudflare where the site shows Cloudflare signs, GitHub Pages otherwise), so no site changes host (#605).
+- Live stats and the change-request inbox publish only on Cloudflare Pages, and the warning says why. A site with no host setting now defaults to Cloudflare Pages; the update first writes each existing site's host down (Cloudflare where the site shows Cloudflare signs, GitHub Pages otherwise), so no site changes host (check `site-host`) (#605).
 
 ## [1.12.20] — 2026-11-12
 
@@ -232,7 +550,7 @@ Releases before 1.11.0 are in [docs/history/changelog-archive.md](docs/history/c
 ### Changed
 
 - Wrap-up writes only active threads; settled and dormant ones stay out of what prep reads.
-- The player site never publishes a Dormant Threads heading: threads are parked only once the site's publish tool hides it, and the update offers the entry to vaults that keep their own hidden-headings list.
+- The player site never publishes a Dormant Threads heading: threads are parked only once the site's publish tool hides it, and the update offers the entry to vaults that keep their own hidden-headings list (check `hide-sections-dormant`).
 - Publish tool 1.70.6: `Dormant Threads` joins the hidden headings.
 
 ### Fixed

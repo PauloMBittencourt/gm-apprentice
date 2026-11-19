@@ -12,7 +12,7 @@ gma vault-write <vault> <command> ...
 | Argument | Value | Help |
 |---|---|---|
 | `<vault>` |  | the vault folder |
-| `<command>` | `wrapup-new`, `wrapup-add`, `wrapup-settle`, `story`, `npc-story`, `status`, `threads`, `log`, `timeline`, `session-new`, `play-notes-new`, `resolve`, `promote-plan`, `chapter-new`, `scene-new`, `scene-paused`, `scene-played`, `prop-new`, `prop-hand`, `plan`, `npc-merge`, `batch` |  |
+| `<command>` | `wrapup-new`, `wrapup-add`, `wrapup-settle`, `story`, `npc-story`, `status`, `threads`, `log`, `timeline`, `session-new`, `play-notes-new`, `export-new`, `resolve`, `promote-plan`, `chapter-new`, `scene-new`, `scene-paused`, `scene-played`, `prop-new`, `prop-hand`, `plan`, `npc-merge`, `entity-new`, `batch` |  |
 
 Example: `gma vault-write "<vault>" wrapup-add "<wrap-up>" --write`
 <!-- END GENERATED -->
@@ -22,6 +22,10 @@ create a session's Wrap-Up
 
 ```text
 gma vault-write <vault> wrapup-new --session SESSION [options]
+```
+
+```text
+Several writes at once: put this as a '=== wrapup-new ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -43,6 +47,8 @@ stdin: markdown sections, each starting with a heading.
 A ## section is player-facing and goes before GM Notes; a ###
 or #### section goes under GM Notes, unless it is written
 inside a ## section, where it stays and players see it.
+
+Several writes at once: put this as a '=== wrapup-add ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -72,6 +78,8 @@ its bold lead is LEAD. In Keeper Checklist the item becomes
 '- [x] ~~item~~ — RULING'; under Open Questions
 '~~item~~ — answered: RULING'. Nested lines stay. An item
 already ticked or struck is refused.
+
+Several writes at once: put this as a '=== wrapup-settle ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -92,6 +100,8 @@ stdin: entries, each opened by a '# [[PC Name]]' line.
 An entry may open with its own '## ' heading; otherwise it
 gets '## Session N - Title'. An entry holds no # or ## after that.
 --replace rewrites the session's entry instead of adding one.
+
+Several writes at once: put this as a '=== story ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -125,6 +135,8 @@ with no voice, and a new passage while vault.voices is off.
 Archived and QA copies are never the NPC. With no
 --section, a HINT row names a section holding earlier
 session passages.
+
+Several writes at once: put this as a '=== npc-story ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -149,15 +161,19 @@ stdin: labelled fields, each opened by '**Label:** value' at
 the margin; lines under it (an Open threads list) belong to it.
 Each field sent replaces the one with that label in
 ## Current Status, in the note's own shape; a label the note
-lacks is added after its last field. Fields not sent, the
-lede, subsections and asides are left alone. --show prints
-the fields as they stand, and reads no stdin.
+lacks is added after its last field. Plain lines before the
+first field are the PC's new lede (one present-tense line),
+replacing the old one. Fields not sent, the lede when none
+is sent, subsections and asides are left alone. --show
+prints the lede and fields as they stand, and reads no stdin.
+
+Several writes at once: put this as a '=== status ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
 |---|---|---|
 | `<pc>` |  | the PC note, vault-relative, or its name |
-| `--show` |  | print the PC's Current Status fields |
+| `--show` |  | print the PC's Current Status lede and fields |
 | `--write` |  | write it (default: preview) |
 <!-- END GENERATED -->
 
@@ -202,6 +218,8 @@ stdin: one row per line, fields separated by TAB.
 SINCE is a session label, or - for none. WHO is PC note
 names separated by commas, or 'party' (for move, every active
 PC). Any ERROR row writes nothing.
+
+Several writes at once: put this as a '=== threads ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -226,6 +244,8 @@ retired PC's go to Further Appearances, made if missing;
 any section name is accepted. A section the note's template
 keeps under GM Notes must be written as 'GM Notes/<Name>'
 unless the note already has it as a public section.
+
+Several writes at once: put this as a '=== log ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -243,6 +263,8 @@ gma vault-write <vault> timeline --under UNDER [options]
 ```text
 stdin: entries exactly as they should read. A line at the
 margin opens an entry; indented lines belong to it.
+
+Several writes at once: put this as a '=== timeline ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -263,9 +285,12 @@ gma vault-write <vault> session-new --number NUMBER --title TITLE [options]
 ```text
 Files both beside the previous session, from the session
 template; the previous index's own keys come forward empty.
---export places a table-assistant export whole under
-## Narrative Record and resolves its NPCs, Locations and
+--export files a table-assistant export beside them as its
+own <index> - Export note, whole and unedited, linked as
+documents.export, and resolves its NPCs, Locations and
 Items: EXACT, ALIAS, NEAR (candidates) or NONE, one row each.
+
+Several writes at once: put this as a '=== session-new ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -276,6 +301,7 @@ Items: EXACT, ALIAS, NEAR (candidates) or NONE, one row each.
 | `--chapter` | `CHAPTER` | the chapter, when the number alone does not say which |
 | `--upcoming` |  | a session not yet played (prep): the index alone, status planned, no Play Notes |
 | `--export` | `EXPORT` | the export file (any path) |
+| `--created-by` | `session-play`, `vault-ingest`, `manual` | the skill filing it, stamped as created_by on the play records (default manual) |
 | `--write` |  | write it (default: preview) |
 <!-- END GENERATED -->
 
@@ -291,7 +317,9 @@ Files <index> - Play Notes beside the index and sets its
 documents.play_notes, play_date (with --play-date) and a
 planned or prepped status to played; the Plan link stays.
 Refused when Play Notes anywhere name the session. --export
-works as in session-new.
+works as in session-new; export-new files an export alone.
+
+Several writes at once: put this as a '=== play-notes-new ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -299,6 +327,35 @@ works as in session-new.
 | `--session` | `SESSION` | the session index: path or name |
 | `--play-date` | `PLAY_DATE` | YYYY-MM-DD |
 | `--export` | `EXPORT` | the export file (any path) |
+| `--created-by` | `session-play`, `vault-ingest`, `manual` | the skill filing it, stamped as created_by on the play records (default manual) |
+| `--write` |  | write it (default: preview) |
+<!-- END GENERATED -->
+
+<!-- BEGIN GENERATED: gma vault-write export-new -->
+a table-assistant export beside a session index, as its own Export note
+
+```text
+gma vault-write <vault> export-new --session SESSION --export EXPORT [options]
+```
+
+```text
+Files <index> - Export beside the index, the export whole and
+unedited, and sets its documents.export, play_date (with
+--play-date) and a planned or prepped status to played.
+Play Notes there or not, it leaves them alone, so it runs
+after session-play as well as before. Refused when an Export
+already names the session. Resolves the export's names as
+session-new does.
+
+Several writes at once: put this as a '=== export-new ...' block in `gma vault-write <vault> batch FILE`.
+```
+
+| Argument | Value | Help |
+|---|---|---|
+| `--session` | `SESSION` | the session index: path or name |
+| `--export` | `EXPORT` | the export file (any path) |
+| `--created-by` | `session-play`, `vault-ingest`, `manual` | the skill filing it, stamped as created_by on the play records (default manual) |
+| `--play-date` | `PLAY_DATE` | YYYY-MM-DD |
 | `--write` |  | write it (default: preview) |
 <!-- END GENERATED -->
 
@@ -315,7 +372,7 @@ The name rows session-new prints, for an export whose session is already filed; 
 
 | Argument | Value | Help |
 |---|---|---|
-| `--export` | `EXPORT` | the export file |
+| `--export` | `EXPORT` | the export file (any path, or the Export note's path in the vault) |
 <!-- END GENERATED -->
 
 <!-- BEGIN GENERATED: gma vault-write promote-plan -->
@@ -327,8 +384,15 @@ gma vault-write <vault> promote-plan <draft> --to TO --plan-type PLAN_TYPE [opti
 
 ```text
 Scaffolds from the plan template, copies the draft's body
-exactly and runs the schema check. participants and locations
-are left for the caller to fill.
+exactly and runs the schema check. campaign is the vault's
+own Campaign Overview. participants and locations are the
+notes named with --participant and --location, then the
+people, groups, creatures and places the body links to; a
+name in the body's prose is never matched. --section
+promotes one heading's section of a draft that holds
+several plans.
+
+Several writes at once: put this as a '=== promote-plan ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -337,7 +401,11 @@ are left for the caller to fill.
 | `--to` | `TO` | the plan, vault-relative |
 | `--plan-type` | `PLAN_TYPE` | the plan's type, one word |
 | `--chapter` | `CHAPTER` | default: the chapter folder of --to |
-| `--leads-to` | `LEADS_TO` | a plan this one leads to (repeatable) (repeatable) |
+| `--leads-to` | `LEADS_TO` | a plan this one leads to (repeatable) |
+| `--participant` | `PARTICIPANT` | an NPC, PC, faction or creature in the plan, by its note's name or alias (repeatable) |
+| `--location` | `LOCATION` | a place in the plan, by its note's name or alias (repeatable) |
+| `--date` | `DATE` | lastUpdated value, YYYY-MM-DD |
+| `--section` | `SECTION` | copy this heading's section of the draft alone (its title, or the heading with its hashes): a draft that holds several plans |
 | `--write` |  | write it (default: preview) |
 <!-- END GENERATED -->
 
@@ -350,6 +418,8 @@ gma vault-write <vault> chapter-new --title TITLE [options]
 
 ```text
 Creates Chapters/<title>/<title>.md from the chapter template. Refused when a chapter of that title exists.
+
+Several writes at once: put this as a '=== chapter-new ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -372,6 +442,8 @@ Creates <chapter folder>[/<folder>]/Scenes/<title>.md from the
 scene template, or with --set-piece
 Scenes/<title>/<title>.md. --chapter is the chapter note's
 name, its title or its folder; none or several: refused.
+
+Several writes at once: put this as a '=== scene-new ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -396,6 +468,8 @@ writes the snapshot on stdin as the scene's `## Paused`
 section (replaced in place when there is one, else at the top
 of the body). --new files a scene born at the table in the
 session's chapter (or --chapter) as Scenes/<scene>.md.
+
+Several writes at once: put this as a '=== scene-paused ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -417,6 +491,8 @@ gma vault-write <vault> scene-played --scene SCENE [options]
 
 ```text
 Sets status to played or dropped; played adds the session to played_in once. No other field changes.
+
+Several writes at once: put this as a '=== scene-played ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -441,6 +517,8 @@ names a hand-made page beside the note. --hand names the
 writer's hand in _meta/prop-hands.json (a new one needs
 --hand-font). --scene links the prop from that scene's
 entities. The publish list is never touched.
+
+Several writes at once: put this as a '=== prop-new ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -459,6 +537,57 @@ entities. The publish list is never touched.
 | `--write` |  | write it (default: preview) |
 <!-- END GENERATED -->
 
+<!-- BEGIN GENERATED: gma vault-write entity-new -->
+create an entity note from its template (stdin)
+
+```text
+gma vault-write <vault> entity-new --type TYPE --name NAME [options]
+```
+
+```text
+stdin: the note as you have it. An optional frontmatter block
+with only the fields to set and `relationships:`, then the
+body's sections. A ## section is the players'; every ###
+section goes under ## GM Notes, inside the template's gm-only
+fence, wherever it is written. A #### heading stays with its
+section: inside a ## section the players see it, and a warning
+says so, as it does for a ## the template lacks. Sections go
+in the template's order and one left
+out is left out. ## Related and ### Hidden Ties are written
+from relationships (a gm_only tie is hidden): never send
+them. gm_only is true or false; any other word is refused.
+A tie whose type runs both ways is written bidirectional, and
+parent_location and its part_of tie are kept as a pair (never
+from a gm_only tie: the field is published). A tie
+to a note that does not exist yet takes `target_type: <type>`
+(not written) unless a later block of the same batch makes
+that note. Every other relationship rule: gma vault-check
+<vault> relationships --file <note>.
+--type adventure-brief files the brief at
+Adventures/NAME/NAME.md, named by `title`, with ## Open
+Questions kept in the template's spoiler block.
+--type pc files the PC at Characters/PCs/NAME.md from the
+vault's system sheet (_Templates/pc-<system>.md, else the
+plugin's; the generic sheet when the vault has no system).
+Send what you have (player_name, Background, Current Status,
+Notes); a ## section left out keeps the template's text, so
+the sheet's tables are there to fill. Then, for a D&D sheet's
+numbers: gma dnd-sheet <note>
+
+Several writes at once: put this as a '=== entity-new ...' block in `gma vault-write <vault> batch FILE`.
+```
+
+| Argument | Value | Help |
+|---|---|---|
+| `--type` | `TYPE` | the note's type: adventure-brief, clue, creature, document, event, faction, heritage, item, location, npc, organization, pc |
+| `--name` | `NAME` | the note's name: its file name |
+| `--folder` | `FOLDER` | a sub-folder of the type's folder |
+| `--date` | `DATE` | lastUpdated value, YYYY-MM-DD |
+| `--from-npc` | `NPC` | --type pc only: the NPC note this character was, which the PC may share its name with; after the write, run npc-merge NPC PC |
+| `--session` | `SESSION` | a note born at the table: the session, in the vault's asOfSession shape (9 or "Session 9"), for createdSession and asOfSession; an empty source becomes play |
+| `--write` |  | write it (default: preview) |
+<!-- END GENERATED -->
+
 <!-- BEGIN GENERATED: gma vault-write prop-hand -->
 add a writer's hand to _meta/prop-hands.json
 
@@ -471,6 +600,8 @@ Adds a hand for props already filed (prop-new adds one for a
 new prop). The same id with the same font is a skip; with a
 different font, refused. It never touches a note or the
 publish list.
+
+Several writes at once: put this as a '=== prop-hand ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -497,6 +628,8 @@ Plan's read-aloud, clock and unresolved-link rows. No index yet:
 Plan is never overwritten: --section replaces each section
 on stdin by level and title, and adds a missing ## where the
 template has it.
+
+Several writes at once: put this as a '=== plan ...' block in `gma vault-write <vault> batch FILE`.
 ```
 
 | Argument | Value | Help |
@@ -511,7 +644,8 @@ template has it.
 <!-- END GENERATED -->
 
 Use `npc-merge` when an NPC has become a PC and both notes exist (create
-the PC from its template first), or when `gma vault-check <vault> npc-pairs`
+the PC first with `entity-new --type pc --from-npc "<NPC note>"`, which may
+keep the NPC's name), or when `gma vault-check <vault> npc-pairs`
 names a pair. It makes one note, word for word: the NPC's frontmatter unioned
 or filled into the PC's, its Campaign Log in Appearances, its Related in
 Relationships, its GM Notes and any section the site hides in GM Notes, and
@@ -562,10 +696,17 @@ against one plan: each
 command's stdin. Commands: every writer here, plus
 'stamp FILE... <stamp-entities options>', 'note-new PATH'
 (body: the whole note), 'section NOTE HEADING
-[--append|--replace]' (body: the text) and 'names [--wrapup
+[--append|--replace]' (body: the text; 'section NOTE --lead'
+writes the text above the note's first heading or hidden
+block, a scene's Situation, Starts it and If-table),
+'names [--wrapup
 WRAPUP]' (rows 'export spelling<TAB>vault spelling': each is
 replaced in every other block; --wrapup adds the Name
-Conflicts table). A body line starting
+Conflicts table) and 'sheet PC-NOTE KEY=VALUE...' (no body:
+the PC's vitals, hp=41 hit-dice=1/5, into the Stat Sheet's own
+cells by the publish tool's writers; a key with no row is a
+WARNING; `gma publish sheet set --help` lists the keys). A body
+line starting
 '===' is written '\==='. Without --write: each block's rows,
 nothing written. With --write: every chosen block, or none if
 any is refused (all refusals listed), then the frontmatter,

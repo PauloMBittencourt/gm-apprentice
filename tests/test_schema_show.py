@@ -180,11 +180,18 @@ class ShowReadsTheTemplates(unittest.TestCase):
         self.assertEqual(shown_values("faction", "values (unchecked)")["status"],
                          set(sr.FACTION_STATUS))
 
-    def test_types_with_no_template_read_their_example(self):
+    def test_the_adventure_brief_reads_its_own_template(self):
+        # #681: it had none, and read an example in the Midwife's reference.
         brief = shown("adventure-brief")
-        self.assertIn("the-midwife/references/scaffold-handoff.md", brief["template"])
-        for field in ("system", "sessions_estimated", "continuation_type"):
+        self.assertEqual(brief["template"], "_Templates/_Template_Adventure_Brief.md")
+        self.assertIn("Adventures/<name>/", brief["folder"])
+        for field in ("title", "system", "sessions_estimated", "continuation_type"):
             self.assertIn(field, brief["optional"].split(", "))
+        self.assertNotIn("adventure_shape", brief["optional"].split(", "))   # #735
+
+    def test_types_with_no_template_read_their_example(self):
+        self.assertIn("shared/session-document-chain.md",
+                      shown("session-play-notes")["template"])
         self.assertIn("played_in", shown("scene")["optional"].split(", "))
         self.assertIn("sort_order", shown("chapter")["optional"].split(", "))
         self.assertEqual(shown("meta")["optional"], "none listed (no template or example)")
@@ -211,7 +218,6 @@ class ShowReadsTheTemplates(unittest.TestCase):
                          "parent_location (part_of)")
 
     def test_older_names_and_subtypes(self):
-        self.assertIn("write pc_roster", sr.show("player-characters") or "")
         self.assertIn("write session_wrap", sr.show("session-wrapup") or "")
         self.assertIn("abstract", sr.show("character") or "")
         self.assertIn("no rules of its own", sr.show("weapon") or "")

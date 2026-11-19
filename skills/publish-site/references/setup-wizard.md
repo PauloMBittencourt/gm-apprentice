@@ -532,12 +532,18 @@ error dump.
 Create the Cloudflare Pages project once, then deploy:
 
 ```bash
-npx wrangler@4 pages project create <project_name> --production-branch=main   # once per site
+npx wrangler@4 pages project create <project_name> --production-branch=main --force   # once per site
 gma publish deploy --verify --config vault.config.json
 ```
 
-If `project create` reports "a project with this name already exists,"
-skip it and run `deploy` directly. `deploy --verify` builds, deploys, and
+`--force` belongs to this one command: without it wrangler hands the
+create to Cloudflare Workers and stops with "Missing entry-point to
+Worker script or to assets directory", and nothing is created. No later
+command takes it. A wrangler too old to know the flag says so (an older
+copy in the npx cache): run the create without it. If `project create` reports "a project with this name
+already exists," skip it and run `deploy` directly.
+
+`deploy --verify` builds, deploys, and
 probes the deployment wrangler printed in one step (exit 1 when it
 cannot tell which build is served) — relay its final line to the GM
 verbatim. If it fails on authentication, re-check the token dance
@@ -607,8 +613,9 @@ and each can be set up later:
 - **Live status bar** — players see and update their hit points and the
   like (HP and FP in GURPS; hit points, Sanity and Luck in Call of Cthulhu;
   hit points, spell slots and uses in D&D) from their phones during play,
-  in real time. (The roster page already shows a static party table at
-  Tier 1 — this is what makes it live.)
+  in real time. (With character sheets shown, the party page already
+  shows a static party table at Tier 1 for a system that has one — this
+  is what makes it live.)
 - **At-table change-request inbox** — players submit sheet edits and
   questions from their phones during a session; you review and apply
   them.

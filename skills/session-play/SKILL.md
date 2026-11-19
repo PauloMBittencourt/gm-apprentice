@@ -41,17 +41,22 @@ vault. Essentials only.
 table-ready. Then ask **"Want me to save this to the vault?"** The
 GM may defer (e.g. three options, players haven't chosen) — flag
 unsaved content for wrap-up. Create a vault file only on the GM's
-yes: `canon_status: DRAFT`, and any `relationships:` `type:` from
+yes, with `gma vault-write <vault> entity-new --type <type> --name
+"<Name>" --session "<asOfSession value>" --date <today> --write` (the
+session in the shape the vault's notes already use, `9` or `"Chapter
+4, Session 9"`; the note on stdin; it comes out DRAFT and marked as
+born this session), and any
+`relationships:` `type:` from
 `_meta/relationship-types.md`, never invented (normalize via
 `shared/relationship-normalization.md`; deeper authoring waits for
 wrap-up). Note a saved entity in the Play Notes too.
 
 **Capture notes** — write raw shorthand to the session's Play Notes
-file (`type: session-play-notes`). If none exists, create it per
-`shared/session-document-chain.md` with `created_by: session-play`,
-set the session index's `documents.play_notes` to it and `status`
-to `played` — frontmatter only; the index body publishes, so never
-note anything there. Acknowledge and hold — no editing or reorganizing;
+file (`type: session-play-notes`). If none exists, file it with
+`gma vault-write <vault> play-notes-new --session "<index>"
+--created-by session-play --write`, which links it from the index and sets `status: played`;
+never note anything in the index body (it publishes). An Export note beside it (`type:
+session-export`) is not Play Notes: leave it alone. Acknowledge and hold — no editing or reorganizing;
 wrap-up processes it. Mark entities with:
 
 | Marker | Use when |
@@ -70,6 +75,9 @@ Scene 3: PCs searched the harbour. UPDATE: The Merry Widow —
   confirmed abandoned, signs of struggle below decks
 ```
 
+The GM says to add a house rule: add it as a bullet to the Overview's
+"House Rules" with `printf '%s\tHouse Rules\t- %s\n' "<Overview path>" "<the rule>" | gma vault-write <vault> log --write` (the section is made if missing; the path, like `_Campaign/Campaign Overview.md`, is the `(source: ...)` line under "Campaign Overview" in `gma session-context <vault> --brief`).
+
 **Player sheet changes** — players' sheet edits from the published
 site are handled by publish-site's "start your checking loop"
 (`references/change-request-loop.md`) in a separate terminal; point
@@ -81,7 +89,7 @@ Load the file directly — don't search.
 
 | Need | Go to |
 |------|-------|
-| Rules dispute | `gma rules-lookup {system} "<term>"` first — one row, cited `file:line`, is the answer at the table. No python: `ttrpg-expert/systems/{system}/rules-reference.md` (CoC, D&D, PF2e, FitD, Generic) or `mechanics.md` (GURPS) |
+| Rules dispute | House rules first (the brief's House Rules), then the book. `gma rules-lookup {system} "<term>"` first — one row, cited `file:line`, is the answer at the table. No python: `ttrpg-expert/systems/{system}/rules-reference.md` (CoC, D&D, PF2e, FitD, Generic) or `mechanics.md` (GURPS) |
 | Combat mechanics | `ttrpg-expert/systems/{system}/combat-reference.md` (CoC) or `combat.md` (GURPS — for sheet arithmetic disputes, run `gma gurps-check <sheet> defenses` or `damage` instead of hand-checking) or `conditions-rules.md` (D&D) or `rules-reference.md` (PF2e) or `mechanics.md` (FitD) |
 | Improvise NPC | `ttrpg-expert/npc-generation.md` §The 3-Line NPC (Quick Generation) |
 | Random encounter | `ttrpg-expert/random-generation.md` §Random Encounter Generation |

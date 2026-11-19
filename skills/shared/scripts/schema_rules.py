@@ -34,6 +34,7 @@ from vaultlib import (  # noqa: E402,F401
     WRAP_UP_TYPES,
     chapter_key,
     chapter_of,
+    effectively_empty,
     extract_frontmatter,
     has_nested_block,
     parse_session_number,
@@ -63,8 +64,11 @@ SYSTEM_RULES: dict[str, str] = {
 
 def system_id(raw: object) -> str | None:
     """The canonical id a written system names (trimmed, any case); the
-    text itself, lowered, when it is no known alias; None when blank."""
+    text itself, lowered, when it is no known alias; None when blank or
+    `undecided` (the Midwife's brief before the GM picks one)."""
     text = str(raw or "").strip().lower()
+    if text == "undecided":
+        return None
     return SYSTEM_ALIASES.get(text, text) or None
 
 
@@ -81,15 +85,15 @@ TYPE_FOLDERS: dict[str, frozenset[str]] = {
     f["folder"]: frozenset().union(*(_descendants(t) for t in f["types"]))
     for f in _ontology()["vault_folders"]}
 
+# Types whose every note has a folder of its own, named for the note, under
+# this one: `Adventures/<name>/<name>.md`.
+OWN_FOLDER_TYPES = {"adventure-brief": "Adventures"}
+
 # Valid enum values
 CANON_STATUS_VALUES = {"DRAFT", "AUTHORITATIVE", "SUPERSEDED", "STUB"}
 SESSION_STATUS = set(SESSION_NOT_YET_RUN | SESSION_PLAYED)
 SCENE_STATUS = ("planned", "paused", "played", "dropped")
 CHAPTER_STATUS: tuple[str, ...] = tuple(_ontology()["chapter_status"]["values"])
-SCENE_TYPES = {
-    "investigation", "social", "combat", "chase",
-    "transition", "horror", "downtime", "other"
-}
 NPC_STATUS = {"alive", "dead", "missing", "unknown"}
 PC_STATUS = frozenset(NPC_STATUS | {"retired"})
 ADVENTURE_BRIEF_SCOPE = {"campaign", "one-shot", "few-shot"}
@@ -99,9 +103,6 @@ CAMPAIGN_OVERVIEW_STATUS = {
 ADVENTURE_BRIEF_CONTINUATION = {
     "new", "new-chapter", "new-arc", "time-jump",
     "prequel", "parallel", "new-pcs"
-}
-ADVENTURE_BRIEF_SHAPE = {
-    "linear", "branching", "hub-and-spoke", "open-node", "sandbox"
 }
 WORLD_DOMAIN_STATUS = {"active", "stub", "inactive"}
 PLAN_TYPES = {"arc", "scene", "investigation", "timeline"}
@@ -122,13 +123,12 @@ PROP_SHOW_SEALED = frozenset({"titles", "none"})
 CHECKED_VALUES: dict[str, dict[str, frozenset[str]]] = {
     "*": {"canon_status": frozenset(CANON_STATUS_VALUES)},
     "session": {"status": frozenset(SESSION_NOT_YET_RUN | SESSION_PLAYED)},
-    "scene": {"status": frozenset(SCENE_STATUS), "scene_type": frozenset(SCENE_TYPES)},
+    "scene": {"status": frozenset(SCENE_STATUS)},
     "chapter": {"status": frozenset(CHAPTER_STATUS)},
     "npc": {"status": frozenset(NPC_STATUS)},
     "pc": {"status": PC_STATUS},
     "adventure-brief": {"scope": frozenset(ADVENTURE_BRIEF_SCOPE),
-                        "continuation_type": frozenset(ADVENTURE_BRIEF_CONTINUATION),
-                        "adventure_shape": frozenset(ADVENTURE_BRIEF_SHAPE)},
+                        "continuation_type": frozenset(ADVENTURE_BRIEF_CONTINUATION)},
     "campaign_overview": {"status": frozenset(CAMPAIGN_OVERVIEW_STATUS),
                           "scope": frozenset(ADVENTURE_BRIEF_SCOPE)},
     "world_domain": {"status": frozenset(WORLD_DOMAIN_STATUS)},
@@ -177,14 +177,12 @@ REQUIRED_FIELDS = {
     "session": ["type", "session_number", "status", "documents"],
     "session-plan": ["type", "canon_status", "session"],
     "session-play-notes": ["type", "canon_status", "session"],
+    "session-export": ["type", "canon_status", "session"],
     **{t: ["type", "canon_status", "session"] for t in sorted(WRAP_UP_TYPES)},
     "scene": ["type", "status"],
     "chapter": ["type", "title"],
     "meta": ["type"],
     "timeline": ["type"],
-    "pc_roster": ["type"],
-    # An older name for pc_roster, still accepted.
-    "player-characters": ["type"],
     "character-story": ["type", "canon_status"],
     "campaign_overview": ["type", "canon_status"],
     "heritage": ["type", "canon_status"],
@@ -217,6 +215,7 @@ TEMPLATE_NAMES = {
     "heritage.md": "_Template_Heritage.md",
     "world-domain.md": "_Template_World_Domain.md",
     "plan.md": "_Template_Plan.md",
+    "adventure-brief.md": "_Template_Adventure_Brief.md",
     "campaign-overview.md": "_Template_Campaign_Overview.md",
     "session.md": "_Template_Session.md",
     "session-plan.md": "_Template_Session_Plan.md",
@@ -232,8 +231,8 @@ WORLD_STUBS = {"world-index.md": "_World/world-index.md", "world-flags.md": "_Wo
 # Types with no template: the example frontmatter their fields are read from,
 # under skills/ (an `npx skills` install holds the skills beside shared/).
 EXAMPLE_FILES = {
-    "adventure-brief": "the-midwife/references/scaffold-handoff.md",
     "session-play-notes": "shared/session-document-chain.md",
+    "session-export": "shared/session-document-chain.md",
 }
 SKILLS_DIR = TEMPLATES_DIR.parent.parent
 
@@ -275,7 +274,7 @@ def is_schema_type(etype: str) -> bool:
 
 
 def _empty(value: object) -> bool:
-    return value is None or value in ("", [], {}) or (isinstance(value, str) and not value.strip())
+    return effectively_empty(value)
 
 
 def frontmatter_findings(fm: dict, setting: Callable[[str], Iterable[object]] | None = None,
@@ -438,7 +437,6 @@ def tone_proposal(raw: object) -> str | None:
 
 # Older spellings of a type: the name to write instead.
 OLDER_TYPE_NAMES: dict[str, str] = {
-    "player-characters": "pc_roster",
     **{t: WRAP_UP_TYPE for t in sorted(WRAP_UP_TYPES) if t != WRAP_UP_TYPE},
 }
 
@@ -562,6 +560,8 @@ def show(etype: str) -> str | None:
     elif example_fields(etype):
         lines.append(f"template: none; fields from the example in {EXAMPLE_FILES[etype]}")
     folders = [f for f, types in TYPE_FOLDERS.items() if etype in types]
+    if etype in OWN_FOLDER_TYPES:
+        folders.append(f"{OWN_FOLDER_TYPES[etype]}/<name>/ (a folder of its own)")
     if folders:
         lines.append("folder: " + ", ".join(folders))
     required = REQUIRED_FIELDS.get(etype, [])

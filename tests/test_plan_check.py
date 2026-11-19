@@ -143,10 +143,11 @@ class BadPlanRowsTests(unittest.TestCase):
         self.assertIn("Objective", legacy[0].message)
         self.assertIn("Scene 2", legacy[0].locus)
 
-    def test_scene_type(self):
-        f = self.one("scene-type")
-        self.assertEqual(f.level, "WARNING")
-        self.assertIn("'dance'", f.message)
+    def test_an_old_type_line_raises_nothing(self):
+        # The Plan has no **Type:** line (#759); an old Plan's, even a word
+        # off the old list ("dance"), is no finding.
+        self.assertEqual(rows_for(self.findings, "scene-type"), [])
+        self.assertFalse(any("dance" in f.message for f in self.findings))
 
     def test_duration_locus_is_scene_1s_line(self):
         rows = rows_for(self.findings, "duration")
@@ -431,7 +432,7 @@ class ShippedTemplateTests(unittest.TestCase):
                                       pc.re.S))
         tpl = pc.re.sub(r"<!--.*?-->", "", self.TEMPLATE.read_text(
             encoding="utf-8"), flags=pc.re.S)
-        keep = set(pc.SCENE_LABELS) | set(pc.CONTINGENCY_LABELS) | {"Type"}
+        keep = set(pc.SCENE_LABELS) | set(pc.CONTINGENCY_LABELS)
         norm = lambda text: {  # noqa: E731
             m.split(" (")[0].replace("\u2026", "...")
             for m in label.findall(text)} & keep
@@ -446,9 +447,21 @@ class ShippedTemplateTests(unittest.TestCase):
         self.assertTrue(pc._is_placeholder_body(self._handouts_body()))
 
     def test_spotlight_forecast_guidance_old_and_new_is_placeholder(self):
-        for line in ("Per-PC role and moment; none left blank. A note.",
+        for line in ("Per-PC hook on the table: a place, person or thread "
+                     "that pulls on them; none left blank. A note.",
+                     "Per-PC role and moment; none left blank. A note.",
                      "Per-PC estimated spotlight share, and any imbalance."):
             self.assertTrue(pc._is_placeholder_body(line + "\n"), line)
+
+    def test_spotlight_guidance_kept_above_real_hooks_is_not_placeholder(self):
+        # The shipped bracketed guidance left above what the GM wrote: the
+        # section holds the hooks, and step 6 must read them.
+        guidance = ("[Per-PC hook on the table: a place, person or thread "
+                    "that pulls on them; none left blank.]\n\n")
+        self.assertTrue(pc._is_placeholder_body(guidance))
+        body = guidance + ("| PC | Hook |\n|---|---|\n"
+                           "| [[Oswin]] | Teodor owes him the ledger |\n")
+        self.assertFalse(pc._is_placeholder_body(body))
 
     def test_handouts_guidance_kept_with_filled_table_is_not_placeholder(self):
         guidance = self._handouts_body().split("|", 1)[0]
@@ -742,7 +755,7 @@ class StateTests(unittest.TestCase):
 
 # skills/session-prep/SKILL.md, Resumable prep — the exact worked example.
 SKILL_MD_EXAMPLE_MARKER = (
-    "<!-- prep-state: intent=set spotlight=Emma(B) scenes=1of3 "
+    "<!-- prep-state: intent=set spotlight=hooks(3of4) scenes=1of3 "
     "open=[Freddy beat?] -->"
 )
 
@@ -764,7 +777,7 @@ class PrepStateTokenizerTests(unittest.TestCase):
     def test_bracketed_value_keeps_its_internal_space(self):
         state = pc.build_state(self._text())
         self.assertEqual(
-            state, {"intent": "set", "spotlight": "Emma(B)",
+            state, {"intent": "set", "spotlight": "hooks(3of4)",
                     "scenes": "1of3", "open": "[Freddy beat?]"})
 
     def test_cli_state_output(self):
@@ -848,6 +861,41 @@ class SessionRunningTitleNormTests(unittest.TestCase):
         states, _problems = pc.vl.scan_body(text)
         self.assertEqual(pc.check_duration("plan.md", states), [])
 
+
+class DurationSessionClockTests(unittest.TestCase):
+    """#726: time left or gone in the session is the GM's pacing trigger,
+    not a scene estimate."""
+
+    def findings(self, line):
+        text = "# Plan\n\n## Session Intent\n\n" + line + "\n"
+        states, _problems = pc.vl.scan_body(text)
+        return pc.check_duration("plan.md", states)
+
+    def test_session_clock_is_left_alone(self):
+        for line in ("If the party is bumbling with about 15 minutes left: "
+                     "Gilt pulls them together.",
+                     "With 20 minutes to go, start the fight.",
+                     "About 30 minutes in, the bell rings.",
+                     "Once 45 minutes are gone, cut to the tower.",
+                     "Or about 15 minutes of play are left."):
+            with self.subTest(line=line):
+                self.assertEqual(self.findings(line), [])
+
+    def test_scene_estimates_still_flagged(self):
+        for line, level in (("Scene 3 runs 20 minutes.", "WARNING"),
+                            ("The chase (20-30 minutes).", "ERROR"),
+                            ("A short beat, ~10 min.", "ERROR"),
+                            ("Scene 3 runs 20 minutes in total.", "WARNING"),
+                            ("The chase takes 20-30 minutes in length.",
+                             "ERROR")):
+            with self.subTest(line=line):
+                found = self.findings(line)
+                self.assertEqual([f.level for f in found], [level])
+
+    def test_an_estimate_beside_a_clock_time_is_still_flagged(self):
+        found = self.findings("With 15 minutes left, run the 20 minutes fight.")
+        self.assertEqual(len(found), 1)
+        self.assertIn("20 minutes", found[0].message)
 
 class PcStateSceneScopingTests(unittest.TestCase):
     """M14: `pc-state` must not fire inside `## Planned Scenes` /

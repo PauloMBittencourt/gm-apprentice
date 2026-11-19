@@ -10,10 +10,9 @@ const { indexTextPath, writeIndexText } = require('./leak-gate/index-text');
 const { readStoryAddresses, writeStoryAddresses, movedSessions, sharedSessionNames } = require('./story-addresses');
 const { resolveBanner, renderBanner, normalizeEntry, attachmentRef, isAddress, defaultAlt, isSvg, bannerSlug, copiedBannerFiles } = require('./banners');
 const { pcKeepList, storyMomentsOn, storyPicturesOn, scenePicturesMode, retiredSheetFieldsFor, retiredSheetFieldsMessage } = require('./pc-prose');
-const { nameList, gmAliasList, strippedLines, sectionWithholder, noteFacts, keptFlags, stubCut, stubMarked, hiddenFieldsOf, unstableBodyMarked, unstableSectionsMarked, pcHeadingsUnstable, HEADINGS_UNSTABLE_WARNING, processContent, playerSafeMarkdown, extractSections, filterSections, filterFields, publishedFrontmatter, isGmOnlyEdge, publishMode, keepOnlySections, resolveImageEmbeds, resolveWikiLinks, relativePath, relativeHref, escapeHtml, plainMetaValue, portraitBasename, encodeHref, isWebImageAddress } = require('./processor');
+const { nameList, gmAliasList, gmAliasRewriter, strippedLines, sectionWithholder, noteFacts, keptFlags, stubCut, stubMarked, hiddenFieldsOf, unstableBodyMarked, unstableSectionsMarked, pcHeadingsUnstable, HEADINGS_UNSTABLE_WARNING, processContent, playerSafeMarkdown, extractSections, filterSections, filterFields, publishedFrontmatter, isGmOnlyEdge, publishMode, keepOnlySections, resolveImageEmbeds, resolveWikiLinks, relativePath, relativeHref, escapeHtml, plainMetaValue, portraitBasename, encodeHref, isWebImageAddress } = require('./processor');
 const { pairHubs, isPlayedSession, REGISTRABLE_TYPES } = require('./session-hub');
 const { generateNav, pcTemplate, npcTemplate, creatureTemplate, locationTemplate, itemTemplate, factionTemplate, eventTemplate, heritageTemplate, worldDomainTemplate, wikiTemplate, sessionBodyHtml, indexTemplate, landingTemplate, fourOhFourTemplate, DIR_LABELS, getRenderer } = require('./templates/index');
-const { isRoster } = require('./templates/nav');
 const { noticeText } = require('./notice');
 const { fontNamesOfFile, licenceOf } = require('./font-names');
 const { getsNoPage, decideNoPage, noPageFor, listedOnly } = require('./previews');
@@ -28,7 +27,7 @@ const { loadManifest } = require('./manifest');
 const { canonicalNfc } = require('./unicode');
 const { real, resolveGmFolder, gmFolderProblem, insideGitWorkTree, gmPage, writeMarker, ROBOTS_TXT } = require('./gm-site');
 const { publishView: sharedPublishView } = require('./published-view');
-const { overviewThreads, threadsOnPage, withSharedThreads } = require('./shared-threads');
+const { overviewView, houseRulesOf, sharedEntries, threadsOnPage, withSharedThreads } = require('./shared-threads');
 const { createMarks, markKinds, sanitize, unmark, withoutMarked } = require('./gm-marks');
 const { generateThemeCSS, googleFontNames, FONT_FORMATS, fontOutputPath } = require('./theme');
 const fontsLib = require('./fonts');
@@ -44,6 +43,7 @@ const { partyDataScript } = require('./party-manifest');
 const { boardFor } = require('./party-board-registry');
 const { hasRealKvId, detectInbox, detectStatusBar } = require('./backend-flags');
 const { publishesPage, autoExcludeCode, isHousekeepingNote, ALWAYS_EXCLUDE_DIRS } = require('./publish-decision');
+const { WORKSPACE_DIRS } = require('./excluding-values');
 const { publishedPages } = require('./published-pages');
 const { isOutOfPlay } = require('./pc-status');
 const { sheetSourceOf } = require('./sheet-source');
@@ -56,6 +56,9 @@ const { styleFontFamilies, FONTS_CSS, BASE_CSS } = require('./props/page');
 const { COLLECTION_ADDRESS, COLLECTION_FALLBACK, collectionSettingsOf, placeCollection, propTaken, latestProps, shownRows, containerItems, stateFieldsOfListed } = require('./props/collection');
 const { makeProps } = require('./props/make');
 const { collectionTemplate } = require('./templates/props-page');
+
+// Where the retired PC roster note's page was (#729); it now sends the reader to the party page.
+const OLD_ROSTER_ADDRESS = 'campaign/player-characters.html';
 
 const TOOL_VERSION = require('../package.json').version;
 
@@ -1046,10 +1049,11 @@ function buildSite(options) {
   // (#209), and scanAttachments applies the same skip list to the attachments tree (#210).
   // `explain`, `manifest diff` and `doctor --site` use the same helper so all four predict
   // exactly the same exclusions the build applies.
-  // The GM site showing whole notes reads every folder but the plugin's own and the GM's personal one; a page in a
+  // The GM site showing whole notes reads every folder but the plugin's own (its working folders among them: no site
+  // shows those, and no build asks the GM about them) and the GM's personal one; a page in a
   // folder the player site hides is then marked with that reason.
   const scanConfig = gm && show.has('notes')
-    ? Object.assign({}, config, { excludeDirs: ALWAYS_EXCLUDE_DIRS })
+    ? Object.assign({}, config, { excludeDirs: [...ALWAYS_EXCLUDE_DIRS, ...WORKSPACE_DIRS] })
     : scanConfigFor(config, hideFrom);
   console.log('Scanning vault:', config.vaultPath);
   const scanReport = scanVaultReport(scanConfig);
@@ -1329,8 +1333,23 @@ function buildSite(options) {
   // not (it is usually left off the publish list), by the same player-safe strip chain, and only its `## Open Threads`
   // section is read from it. A gm-only shared thread stays off the GM site's PC page too. A view that cannot be made
   // gives nothing, never the raw text. The Overview itself gets no page.
-  const sharedAll = overviewThreads({ allNotes, corpus, config, viewOptions: { gm, mark, excludeCallouts, excludeSections, pcKeepSections, storyMoments },
+  // The same view gives the House Rules page its section: house rules are always public, so the page is made from the
+  // Overview's published view whether or not the Overview itself publishes (`houseRulesMd`, '' with none).
+  // An Overview in a folder the site never reads is scanned afresh and has not had the GM-alias rewrite the corpus has
+  // (pairHubs, above): the leak check makes the same rewrite, so the page and the check read one text.
+  const scannedPaths = new Set(corpus.map((p) => p.sourcePath));
+  const aliasRewriter = gmAliasRewriter(corpus.concat(allNotes.filter((n) => !scannedPaths.has(n.sourcePath))), gm ? pages.filter((p) => onPlayerSite.has(p)) : pages, allNotes, publishConfig.withheld_words, gm ? mark : undefined);
+  const overviewMd = overviewView({ allNotes, corpus, config, rewrite: aliasRewriter ? aliasRewriter.markdown : null, rewriteFreshOnly: true, viewOptions: { gm, mark, excludeCallouts, excludeSections, pcKeepSections, storyMoments },
+    what: 'shared threads were left off the PC pages and the House Rules page was not built',
     warn: (message) => console.warn(`  WARNING: ${message}`) });
+  const sharedAll = overviewMd === null ? [] : sharedEntries(overviewMd);
+  let houseRulesMd = overviewMd === null ? '' : houseRulesOf(overviewMd);
+  // A note of the GM's already at house-rules.html keeps it: no generated page, no second menu link.
+  const houseRulesOwner = houseRulesMd ? pages.find((p) => p.outputPath === 'house-rules.html') : null;
+  if (houseRulesOwner) {
+    console.warn(`  WARNING: ${vaultRelPathOf(houseRulesOwner)} owns house-rules.html, so the Overview's House Rules section is not published as a page of its own while that note keeps the address`);
+    houseRulesMd = '';
+  }
   for (const page of pages) {
     if (sharedAll.length && String((page.frontmatter || {}).type).trim().toLowerCase() === 'pc') {
       page.markdown = withSharedThreads(page.markdown, threadsOnPage(page, sharedAll, { linkMap, pages, outOfPlay: publishConfig.statuses.out_of_play }));
@@ -1872,7 +1891,8 @@ function buildSite(options) {
     }
     menuExtra.push({ label: item.label, href: read.href, external: read.kind === 'outside', group: item.group || null });
   }
-  const navFor = generateNav(pages, { hasStory, timelineHref, merged: chaptersMerged ? ['chapters'] : [], extra: menuExtra, collection: collection ? { href: collection.address, label: collection.title } : null });
+  const navFor = generateNav(pages, { hasStory, timelineHref, merged: chaptersMerged ? ['chapters'] : [], extra: menuExtra, collection: collection ? { href: collection.address, label: collection.title } : null,
+    houseRules: houseRulesMd ? { href: 'house-rules.html', label: 'House Rules' } : null });
   // The props page's link from a page at `out`, for its bar: relative, encoded; null when the site has none.
   const collectionHrefFrom = (out) => (collection ? encodeHref(relativeHref(out, collection.address)) : null);
 
@@ -1904,13 +1924,11 @@ function buildSite(options) {
   const tableRows = [];
   const SHEETLESS_NAMED = 8;   // names printed before "and N more"
   const partyCampaignId = require('./scanner').slugify(config.siteTitle || 'campaign');
-  const deferredRosters = [];
-  // The party board the roster page carries, made once every PC page has been rendered.
-  const roster = { board: null, partyManifest: null, live: false };
+  // The Party Status board on the party page (the PCs' index), made once every PC page has been rendered.
+  const party = { board: null, partyManifest: null, live: false };
   const dressedSkins = new Set();
   let anyDressed = false;
-  // One page as the site prints it: { html }, or { roster: processed } for the party roster,
-  // which is rendered once every PC has been (renderRoster). `fx` is where the render's side
+  // One page as the site prints it: { html }. `fx` is where the render's side
   // effects go (images used, warnings, party-board entries, the sheet tallies, a dressed
   // sheet): the build's own (`liveFx`), or throwaway ones when the audit renders a page again.
   // The body of a PC note whose headings a link label changes: none on the player site; on the GM site the whole note
@@ -2005,10 +2023,8 @@ function buildSite(options) {
     const processed = processContent(page, linkMap, excludeSections, imageMap, { usedImages, excludeCallouts, pcKeepSections, storyMoments, ...markOpt });
     processed.bannerHtml = bannerHtml;
     fx.warn(page.outputPath, processed.warnings);
-    if (processed.overwide.length) fx.tableRows.push({ rel: vaultRelPathOf(page), rows: processed.overwide });
+    if (processed.overwide.length || processed.unfilled.length) fx.tableRows.push({ rel: vaultRelPathOf(page), rows: [...processed.overwide, ...processed.unfilled] });
     let html;
-
-    if (isRoster(page)) return { roster: processed };
 
     switch (page.frontmatter.type) {
       case 'pc': {
@@ -2038,6 +2054,7 @@ function buildSite(options) {
           };
           const storyProcessed = processContent(storyPage, linkMap, excludeSections, imageMap, { usedImages: fx.usedImages, excludeCallouts, ...markOpt });
           if (fx === liveFx) fx.warn(page.outputPath, storyProcessed.warnings);
+          if (fx === liveFx && audit && storyProcessed.unfilled.length) fx.tableRows.push({ rel: audit.storyRelOf(page), rows: storyProcessed.unfilled });
           storyHtml = storyProcessed.html && storyProcessed.html.trim() ? storyProcessed.html : undefined;
           storyLines = sessionLines(storyHtml).map((l) => ({ ...l, href: storyPath + l.href }));
         }
@@ -2103,7 +2120,7 @@ function buildSite(options) {
           fx.tohitRows.push({ rel: vaultRelPathOf(page), rows: systemOut.tohitRows });
         }
         // Out-of-play PCs (retired, dead, missing…) keep their sheet page but stay
-        // off the roster's Party Status board (#265).
+        // off the party page's Party Status board (#265).
         if ((systemOut.liveData || systemOut.boardOnly) && !isOutOfPlay(page.frontmatter, publishConfig.statuses.out_of_play)) {
           // Root-relative output path of the PC portrait, for the party-board
           // thumbnail. Resolved the same way portraitImg does (imageMap keyed
@@ -2182,17 +2199,13 @@ function buildSite(options) {
     return { html };
   }
 
-  function renderRoster(page, processed) {
-    const boardHtml = (roster.board && roster.partyManifest)
-      ? roster.board.renderBoard(roster.partyManifest, page.outputPath, { live: roster.live })
-      : null;
-    const islandHtml = (roster.live && roster.board && roster.partyManifest)
-      ? partyDataScript(roster.partyManifest, roster.board.scriptId) : null;
-    return wikiTemplate(page, processed, navFor, config, imageMap, {
-      publishConfig, linkMap, pages,
-      partyBoardHtml: boardHtml, partyDataScript: islandHtml,
-      partyClientScripts: (roster.live && boardHtml) ? roster.board.clientScripts : [],
-    });
+  // The party page's Party Status board, for the page at `outputPath`: { boardHtml, dataScript, clientScripts }, empty
+  // when the site has no board.
+  function partyBoard(outputPath) {
+    if (!party.board || !party.partyManifest) return {};
+    const boardHtml = party.board.renderBoard(party.partyManifest, outputPath, { live: party.live });
+    if (!party.live) return { boardHtml };
+    return { boardHtml, dataScript: partyDataScript(party.partyManifest, party.board.scriptId), clientScripts: party.board.clientScripts };
   }
 
   const liveFx = {
@@ -2367,7 +2380,6 @@ function buildSite(options) {
       // A fast build renders the PC pages and no others.
       if (onlySheets && page.frontmatter.type !== 'pc') continue;
       const out = renderPage(page, liveFx);
-      if (out.roster) { deferredRosters.push({ page, processed: out.roster }); continue; }
       seen(vaultRelPathOf(page), out.html, page, false);
       if (TOHIT_SCRIPT_TAG.test(out.html)) tohitScriptLoaded = true;
       // A fast build writes no page of the people a PC page lists, so their pictures are copied for this one.
@@ -2439,37 +2451,23 @@ function buildSite(options) {
     copyFontFiles(faces.files);
   }
 
-  if (deferredRosters.length) {
-    // The roster/party board always renders as a static initiative table from
+  if (!onlySheets) {
+    // The party board always renders as a static initiative table from
     // published values. When the status-bar tier is on it also goes live
     // (JSON island + client poll of /api/loadout-list). When off, the same
     // table renders without the live layer.
     // The GM site has no party board: it is the live layer's, which the GM site never has.
-    roster.board = sheetsOff || gm ? null : boardFor(publishConfig.system);
-    roster.live = publishConfig.live.stats;
+    party.board = sheetsOff || gm || !partyEntries.length ? null : boardFor(publishConfig.system);
+    party.live = publishConfig.live.stats;
     // Guarded like every other render path so a manifest-build failure
     // does not abort the banners/story/timeline/landing stages that follow.
-    if (roster.board) {
+    if (party.board) {
       try {
-        roster.partyManifest = roster.board.buildManifest(partyCampaignId, partyEntries);
+        party.partyManifest = party.board.buildManifest(partyCampaignId, partyEntries);
       } catch (e) {
         errorCount++;
         renderErrors.push(`the party board: ${e.message}`);
         console.error(`  ERROR building party manifest: ${e.message}`);
-      }
-    }
-    for (const deferredRoster of deferredRosters) {
-      try {
-        const html = renderRoster(deferredRoster.page, deferredRoster.processed);
-        seen(vaultRelPathOf(deferredRoster.page), html, deferredRoster.page, false);
-        if (writes !== 'all') continue;
-        const outPath = path.join(outputDir, deferredRoster.page.outputPath);
-        ensureDir(outPath);
-        if (writeHtml(outPath, html, deferredRoster.page)) console.log(`  wrote ${deferredRoster.page.outputPath} (party board)`);
-      } catch (e) {
-        errorCount++;
-        renderErrors.push(`${deferredRoster.page.outputPath}: ${e.message}`);
-        console.error(`  ERROR rendering roster ${deferredRoster.page.outputPath}: ${e.message}`);
       }
     }
   }
@@ -2510,6 +2508,10 @@ function buildSite(options) {
   // `manifest` just meant a manifest-less player build shipped every GM-only image.
   // A recap's picture counts as used: the story pages are rendered once here, for the set only.
   if (!onlySheets) buildStorySpine(pages, linkMap, storyPairs, { imageMap, usedImages, warn: true }, { marked: gm, marks: mark ? mark.marks : null, players: storyPlayers, figures: storyFigures });
+  // The House Rules page is rendered here, before the pictures are chosen, so a picture used only in a rule is copied.
+  const houseRulesHtml = houseRulesMd
+    ? processContent({ markdown: houseRulesMd, frontmatter: {}, outputPath: 'house-rules.html' }, linkMap, excludeSections, imageMap, { usedImages, excludeCallouts }).html
+    : '';
   const filteredMap = {};
   for (const [basename, entry] of Object.entries(imageMap)) {
     if (usedImages.has(basename)) filteredMap[basename] = entry;
@@ -2684,10 +2686,8 @@ function buildSite(options) {
       : null;
   }
 
-  const pcRoster = pages.find(isRoster);
-  const pcRedirectTarget = pcRoster ? pcRoster.outputPath : null;
-
   const { timelineTemplate } = require('./templates/timeline-page');
+  const { houseRulesTemplate } = require('./templates/house-rules-page');
 
   // Every page of the site that is not one note's own, in the order the build writes them:
   // the section indexes, the timeline, the story chapters, the story's contents page and the
@@ -2702,14 +2702,19 @@ function buildSite(options) {
   for (const page of pages) {
     if (isFolded(page)) foldedOnto.set(page.outputPath, (foldedOnto.get(page.outputPath) || []).concat(page));
   }
-  // What the GM Story page shows after the cards: the wrap-up's parts that go there (its GM Notes), then a link to the
-  // session's Play Notes when they have a page.
+  // What the GM Story page shows after the cards: the wrap-up's parts that go there (its GM Notes), then links to the
+  // session's Play Notes and its Export when they have a page.
   function gmAfter(unit) {
     const parts = (unit.after || []).map((a) => a.html).join('\n');
-    const href = unit.kind === 'session' ? playNotesHrefOf(unit) : null;
+    const exportHref = unit.kind === 'session' ? exportHrefOf(unit) : null;
+    // A wrap-up whose source_document names the Export is not naming Play Notes: that page is linked as the Export.
+    const notesHref = unit.kind === 'session' ? playNotesHrefOf(unit) : null;
+    const href = notesHref && notesHref !== exportHref ? notesHref : null;
     if (href) unit.playNotesHref = href;
     unit.afterHtml = parts ? `<section class="story-gm-after">\n${parts}\n</section>` : '';
-    unit.playNotesHtml = href ? `<p class="story-playnotes"><a href="${encodeHref(relativeHref(unit.outputPath, href))}">Play Notes for this session →</a></p>` : '';
+    const link = (to, label) => `<p class="story-playnotes"><a href="${encodeHref(relativeHref(unit.outputPath, to))}">${label}</a></p>`;
+    unit.playNotesHtml = [href && link(href, 'Play Notes for this session →'),
+      exportHref && link(exportHref, 'Export for this session →')].filter(Boolean).join('\n');
     // A chapter page links its chapter note's own page, the GM's workbench, where the GM site writes one.
     const note = unit.kind === 'chapter' ? unit.sourcePage : null;
     unit.gmNoteHtml = note && pages.includes(note) && !getsNoPage(note) && !isFolded(note)
@@ -2722,6 +2727,14 @@ function buildSite(options) {
     const docs = fmOf(unit.sourcePage).documents;
     const ref = [docs && docs.play_notes, fmOf(unit.wrapUpPage).source_document].find((r) => typeof r === 'string' && r.trim());
     if (!ref) return null;
+    const found = resolveSiteLink(ref.trim(), { linkMap });
+    return found.kind === 'page' ? found.href : null;
+  }
+  // A session's Export (#691): the note its `documents.export` names; the address of its page, or null.
+  function exportHrefOf(unit) {
+    const fm = (unit.sourcePage && (unit.sourcePage.sourceFrontmatter || unit.sourcePage.frontmatter)) || {};
+    const ref = fm.documents && fm.documents.export;
+    if (typeof ref !== 'string' || !ref.trim()) return null;
     const found = resolveSiteLink(ref.trim(), { linkMap });
     return found.kind === 'page' ? found.href : null;
   }
@@ -2739,10 +2752,6 @@ function buildSite(options) {
         if (live && !pages.some((p) => p.outputPath === `${dir}/index.html` && !isFolded(p))) emit(`${dir}/index.html`, redirectPage(`${dir}/index.html`, 'story.html', 'Story so far'), `  wrote ${dir}/index.html (redirect → story.html)`);
         continue;
       }
-      if (dir === 'characters/pcs' && pcRedirectTarget) {
-        if (live) emit(`${dir}/index.html`, redirectPage(`${dir}/index.html`, pcRedirectTarget, 'Player Characters'), `  wrote ${dir}/index.html (redirect → ${pcRedirectTarget})`);
-        continue;
-      }
       // Redirect events/ at the timeline only when one exists; with no timeline the redirect
       // would dangle, so fall through and give events its own index.
       if (dir === 'events' && timelineHref) {
@@ -2755,15 +2764,31 @@ function buildSite(options) {
           dirPages = dirPages.concat(pageDirPages);
         }
       }
+      const isParty = dir === 'characters/pcs';
+      // The party page was once a note's (the PC roster, `_Campaign/Player Characters.md`, retired in #729): the
+      // address that note had sends a reader to the PCs' index, generated or the GM's own, unless a note has its own
+      // page there now.
+      const oldRosterRedirect = () => {
+        if (isParty && live && !pages.some((p) => p.outputPath === OLD_ROSTER_ADDRESS)) {
+          emit(OLD_ROSTER_ADDRESS, redirectPage(OLD_ROSTER_ADDRESS, `${dir}/index.html`, label), `  wrote ${OLD_ROSTER_ADDRESS} (redirect → ${dir}/index.html)`);
+        }
+      };
       const authoredIndex = dirPages.find(p => p.outputPath === dir + '/index.html');
       if (authoredIndex) {
-        if (live) console.log(`  skipped ${dir}/index.html (authored index page)`);
+        // A note the GM wrote as the PCs' index is the party page, as written: the Party Status board is the
+        // generated page's (publish-site's cloudflare-pages.md says so).
+        if (live) console.log(`  skipped ${dir}/index.html (authored index page${isParty && party.board ? '; the Party Status board is on the generated party page only' : ''})`);
+        oldRosterRedirect();
         continue;
       }
       // A section with nothing in it has no index (a Sessions folder holding only folded wrap-ups). The menu and the
       // landing page's cards already leave it out, and a page that lists nothing is only a dead end.
       if (dirPages.length === 0) continue;
-      emit(`${dir}/index.html`, indexTemplate(dir, label, dirPages, navFor, config, publishConfig, imageMap, { cocFolio: require('./templates/pc').usesCocFolio(publishConfig, sheetsOff) }), `  wrote ${dir}/index.html`);
+      emit(`${dir}/index.html`, indexTemplate(dir, label, dirPages, navFor, config, publishConfig, imageMap, {
+        cocFolio: require('./templates/pc').usesCocFolio(publishConfig, sheetsOff),
+        party: isParty ? partyBoard(`${dir}/index.html`) : undefined,
+      }), `  wrote ${dir}/index.html${isParty && party.board ? ' (party board)' : ''}`);
+      oldRosterRedirect();
     }
 
     // Timeline page
@@ -2943,6 +2968,11 @@ function buildSite(options) {
       emit('story.html', storyLanding(spine, characterStories, config, publishConfig, navFor, npcStories), '  wrote story.html');
     }
 
+    // The House Rules page: the Overview's `## House Rules` section, as players see it, whenever it holds a rule.
+    if (houseRulesMd) {
+      emit('house-rules.html', houseRulesTemplate(houseRulesHtml, navFor, config, publishConfig), '  wrote house-rules.html');
+    }
+
     // The props page. One set in a kept folder replaces the file there, and the build says so.
     if (collectionBuilt) {
       resolveCollection();
@@ -2973,7 +3003,7 @@ function buildSite(options) {
     const storyObj = { markdown: pc.storyMarkdown, frontmatter: {}, outputPath };
     const processed = processContent(storyObj, linkMap, excludeSections, imageMap, { usedImages: fx.usedImages, excludeCallouts, ...markOpt });
     fx.warn(outputPath, processed.warnings);
-    if (processed.overwide.length && audit) fx.tableRows.push({ rel: audit.storyRelOf(pc), rows: processed.overwide });
+    if ((processed.overwide.length || processed.unfilled.length) && audit) fx.tableRows.push({ rel: audit.storyRelOf(pc), rows: [...processed.overwide, ...processed.unfilled] });
     const story = {
       title: pc.displayTitle, outputPath, html: processed.html,
       sheetOutputPath: pc.outputPath, prologueHtml: backstoryOf.get(pc) || '', group: characterStoryGroup(pc.frontmatter, publishConfig.statuses.fallen),
@@ -3297,7 +3327,7 @@ function buildSite(options) {
       let storyHtml = '';
       try {
         const out = renderPage(page, scratchFx());
-        html = out.roster ? renderRoster(page, out.roster) : out.html;
+        html = out.html;
       } catch (e) { auditGaps++; }
       try {
         if (own.storyMarkdown && page.frontmatter.type === 'pc') storyHtml = renderCharacterStory(page, scratchFx()).html;

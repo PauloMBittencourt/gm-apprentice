@@ -28,10 +28,6 @@ const NAV_GROUPS = [
   },
 ];
 
-// `pc_roster` is the name; `player-characters` is an older one still found in vaults.
-const ROSTER_TYPES = new Set(['pc_roster', 'player-characters']);
-const isRoster = (page) => !!page.frontmatter && ROSTER_TYPES.has(page.frontmatter.type);
-
 function generateNavGroups(pages, options = {}) {
   const populated = new Set();
   // A section merged into the Story So Far (`options.merged`: the player site's chapters, chapter pages) has no entry.
@@ -43,14 +39,12 @@ function generateNavGroups(pages, options = {}) {
     populated.add(page.outputDir);
   }
 
-  const pcRoster = pages.find(isRoster);
   // Only aim the Events link at the timeline when a timeline page is actually written, and
   // at wherever it is written. The timeline is generated at the root only when dated events
   // exist; otherwise it may be an authored page under its own folder — or absent, in which
   // case Events falls through to its own index.
   const overrides = {};
   if (options.timelineHref) overrides.events = options.timelineHref;
-  if (pcRoster) overrides['characters/pcs'] = pcRoster.outputPath;
 
   const built = NAV_GROUPS
     .map(group => {
@@ -72,6 +66,12 @@ function generateNavGroups(pages, options = {}) {
   if (options.collection) {
     const at = NAV_GROUPS.findIndex(g => g.name === 'Reference');
     built[at].links.push({ label: options.collection.label, href: options.collection.href });
+  }
+
+  // The House Rules page (`options.houseRules`: { href, label }) follows the props page.
+  if (options.houseRules) {
+    const at = NAV_GROUPS.findIndex(g => g.name === 'Reference');
+    built[at].links.push({ label: options.houseRules.label, href: options.houseRules.href });
   }
 
   // The GM's own entries (`player_site.menu_extra`, already resolved by the build) join their group after
@@ -183,4 +183,4 @@ function generateNav(pages, options = {}) {
   };
 }
 
-module.exports = { generateNav, generateNavGroups, renderTopNav, NAV_GROUPS, isRoster };
+module.exports = { generateNav, generateNavGroups, renderTopNav, NAV_GROUPS };

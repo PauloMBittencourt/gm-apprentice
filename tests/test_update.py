@@ -3,6 +3,7 @@
 import contextlib
 import dataclasses
 import io
+import os
 import json
 import shutil
 import sys
@@ -151,6 +152,17 @@ class RunTests(Base):
         self.assertEqual(self.backups(), [])
         self.assertFalse((vault / update_record.RECORD_FILE).exists())
 
+    def test_run_from_inside_the_vault_names_it(self):
+        # #709: `gma update .` printed "Updated  from": the name of `.` is "".
+        vault = make_vault(self, PLUGIN)
+        c, _ = check("tidy", "bookkeeping", lambda: [])
+        here = os.getcwd()
+        os.chdir(vault)
+        self.addCleanup(os.chdir, here)
+        res = self.run_update(Path("."), [c])
+        self.assertEqual(res.vault, vault.resolve().name)
+        self.assertNotEqual(res.vault, "")
+
     def test_bookkeeping_runs_without_asking_and_is_reported_in_plain_words(self):
         vault = make_vault(self)
         log = []
@@ -165,6 +177,23 @@ class RunTests(Base):
         self.assertNotIn("Waiting for you", out)
         self.assertEqual(stamp_of(vault), PLUGIN)
         self.assertIn("Backup: ", out)
+
+    def test_what_the_roster_check_left_is_worth_knowing_word_for_word(self):
+        # #732 review: a link left for the GM to take out by hand, or a
+        # publish list entry left, is never folded into the plain line.
+        vault = make_vault(self)
+        left = ("left the link to the PC roster in notes of NPCs/A.md: the "
+                "update does not edit that form; take it out by hand")
+        c, _ = check("pc-roster-retired", "bookkeeping", lambda: [Item(
+            "pc-roster-retired", WILL, ["delete it"],
+            lambda _v: ["deleted _Campaign/Player Characters.md", left])],
+            plain="Deleted the PC roster note.")
+        code, out, _ = self.main(vault, [c])
+        self.assertEqual(code, 0)
+        self.assertIn("Done:\n- Deleted the PC roster note.", out)
+        self.assertIn("Worth knowing:\n- Left the link to the PC roster in notes "
+                      "of NPCs/A.md: the update does not edit that form; take it "
+                      "out by hand.", out)
 
     def test_a_yes_no_choice_in_a_bookkeeping_check_runs_too(self):
         vault = make_vault(self)

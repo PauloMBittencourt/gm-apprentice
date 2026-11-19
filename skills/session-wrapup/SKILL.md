@@ -27,7 +27,7 @@ block is a line `=== <command> <args>` and then
 that command's stdin. Commands: every `vw` writer with its own
 arguments (`wrapup-new`, `wrapup-add`, `story`, `npc-story`,
 `status`, `log`, `timeline`, `threads`, `scene-played`,
-`scene-paused`), plus `stamp <file>... <stamp-entities options>`,
+`scene-paused`, `entity-new`), plus `stamp <file>... <stamp-entities options>`,
 `note-new <path>` (body: the whole note) and `section <note>
 "<heading>" [--append | --replace]` (body: text for that one section,
 found by heading path; no need to read the note first), and on the
@@ -112,24 +112,28 @@ flush` in the site directory and report its per-PC summary
 (publish-site `references/live-state-flush.md`). No Tier-2 site →
 skip.
 
-Read the session's Play Notes (`type: session-play-notes`). A
-session with no index or Play Notes: `vw session-new --number N
---title "T" --play-date D [--export PATH]` files both; a session
-with an index but no Play Notes: `vw play-notes-new
---session "<index>" --play-date D [--export PATH]`. These two run on
-their own with `--write`, not in the batch: the rest works from the
-notes. Without an export, ask the GM for notes (paste, path, or
-dictation) for them.
+Read the session's play records: its Play Notes (`type:
+session-play-notes`) and its Export (`type: session-export`), each
+its own note, linked as `documents.play_notes` and `documents.export`;
+either may be missing. A session with no index: `vw session-new
+--number N --title "T" --play-date D [--export PATH]` files the index
+and Play Notes (and the Export); an index but no Play Notes: `vw
+play-notes-new --session "<index>" --play-date D`; a gmassistant.app
+export the session has no Export for, Play Notes or not: `vw
+export-new --session "<index>" --export PATH`. These run on their own
+with `--write`, not in the batch: the rest works from the records.
+With neither notes nor an export, ask the GM for notes (paste, path,
+or dictation) for the Play Notes.
 Read the PC roster and the session's Plan for planned-vs-actual.
 `gma plan-check <plan> --inventory` gives per-section status and
 word counts but not scene titles — open the plan body for those.
 What the last session left open (for What Carries Forward and the
-Keeper Checklist) comes from `gma session-context <vault> --carry --before "<session index>"`; don't read that Wrap-Up.
+Keeper Checklist) comes from `gma session-context <vault> --carry --before "<session index>"` (it also prints the Overview's House Rules); don't read that Wrap-Up.
 
-**gmassistant.app export:** if the Play Notes contain a
-`## Memorable Moments` heading, they are a gmassistant.app
-export — read `references/gmassistant-export.md`, which changes
-Steps 2 and 4.
+**gmassistant.app export:** if the session has an Export, or (an
+older vault) its Play Notes contain a `## Memorable Moments` heading,
+read `references/gmassistant-export.md`, which changes Steps 2 and 4.
+Play Notes beside an Export are the GM's jottings: use them too.
 
 ### 2. Narrative Recap
 
@@ -160,7 +164,7 @@ never regenerates it.
 
 **Active PC roster** (also used by 3b and 3c): `gma vault-check <vault> active-pcs`, minus any PC off-screen this session.
 A PC who acted this session but has no note: create it now as a new
-entity (Step 4) from the PC template, its `=== note-new` block ahead
+entity (Step 4), its `=== entity-new --type pc` block ahead
 of the 3b and 3c blocks that name it, holding only the name, the
 player and what they did this session; backstory, appearance and
 personality stay empty for the player (`shared/pc-body-structure.md`
@@ -193,7 +197,7 @@ story, not an appearance log or notes; unsure, ask the GM.
 
 Refresh each roster PC's `Characters/PCs/{Name}.md` so its
 frontmatter and published `## Current Status` don't fall behind
-the narrative.
+the narrative. Apply the house rules as you would the book.
 
 1. Stamp all roster PCs in one block — `asOfSession`/`lastUpdated`
    and the chapter tag swapped for the current chapter's, from the
@@ -219,7 +223,8 @@ the narrative.
 
    Compare `vw status <PC> --show` with Steps 2-3: add a PC's new
    threads (not shared) and exclusive knowledge, refresh
-   `Location`/`Condition`/`Carrying`. Never drop a thread: Reconcile
+   `Location`/`Condition`/`Carrying`, and the lede above the fields
+   when it no longer holds (one present-tense line, sent first). Never drop a thread: Reconcile
    closes it. An item led by a session label or date goes back
    without it (`shared/pc-body-structure.md`). A field that repeats
    or carries a session label (`**Knows (Session 9):**`) is past
@@ -233,6 +238,14 @@ the narrative.
 3. Write an advancement change (XP, points) to a sheet only when
    the Play Notes or the GM give the amount; a missing award goes
    in the Keeper Checklist.
+4. End-of-session vitals the Play Notes or the GM give (HP, Hit
+   Dice spent, Sanity, conditions) go in the Current Status prose and
+   in a `=== sheet <PC> hp=41 hit-dice=1/5` block after them, which
+   writes the Stat Sheet the party board reads (D&D, CoC, GURPS; a
+   wrong key's refusal lists the keys). A value not given is left alone, never guessed. A field
+   step 1's flush changed is the player's: leave it as flush wrote
+   it, and where the notes disagree, 5b's review names both for the
+   GM.
 
 Each PC's refreshed fields show in full in step 5b's review; write
 no receipt into the Wrap-Up — the PC sheet is the record.
@@ -243,13 +256,24 @@ Personal setting reference may sit in `systems/{system}/personal/`
 — check it for faction ties, locations and NPC relationships when
 creating entities.
 
-- **New entities:** read `_Templates/_Template_{Type}.md` and write
-  the whole note from it in a `=== note-new <path>` block,
-  `canon_status: DRAFT`, its relationship edges in its frontmatter.
-  Content session-play already saved goes in verbatim — the template
+- **New entities:** read `_Templates/_Template_{Type}.md` for its
+  fields and section names, then a
+  `=== entity-new --type <type> --name "<Name>" --date <play date>
+  --session "<asOfSession value>"` block each (born at the table, so
+  reconcile reads it as this session's). Its body is a frontmatter block holding only the fields
+  to set and the `relationships:` edges, then the sections that have
+  text: `##` for what the players know, `###` for a GM Notes one. The
+  command fills the rest from the template (`canon_status: DRAFT`),
+  puts every `###` under GM Notes inside its fence and writes
+  `## Related` and `### Hidden Ties` from the edges: send neither. A
+  tie to a note that neither exists nor is made earlier in the batch
+  takes `target_type: <its type>`. A PC is `--type pc`: it is made
+  from the vault's system sheet (`_Templates/pc-<system>.md`), and a
+  `##` section you leave out keeps the sheet's own. Content session-play already saved goes in verbatim — the template
   supplies structure, not replacement prose. Never pattern-match off
   existing entity files. An NPC who joins the party as a PC: the PC
-  note from its template in the batch; after the batch is written,
+  note (`--type pc --from-npc "<NPC note>"`, which may keep the NPC's
+  name) in the batch; after the batch is written,
   run `vw npc-merge "<NPC note>" "<PC note>"` as its own step, show
   the GM its plan, and on a yes run it with `--write`: one note per
   character (`shared/pc-body-structure.md`).
@@ -265,7 +289,9 @@ creating entities.
   spoiler and gm-only blocks and GM Notes secrets as they are (the
   tool will not `--replace` a section holding one); step 5c releases
   them with the GM. A frontmatter field (`status: dead`, a location):
-  a `stamp --set` block. Hand edits, made after step 5b's write: an
+  a `stamp --set` block. `status:` is what the players know (the site
+  shows it): a fate they haven't learned stays in Behind the Scenes, and
+  `status:` changes in the session they learn it (5c). Hand edits, made after step 5b's write: an
   existing note's relationship edges, and a section `--replace`
   refuses.
 - **Cross-entity claims:** when a note asserts something about a
@@ -281,15 +307,21 @@ creating entities.
   sanctioned predicate, store the base direction (`owned_by A→B` →
   `owns B→A`), and drop non-edges (`appears_in <session>`). Table:
   `shared/relationship-normalization.md`. Never invent a `type:`.
-  Mirror each edge in the body's `## Related` (a `gm_only` edge in
-  `### Hidden Ties`), per `shared/entity-schema.md` § Relationships.
+  An edge added to an existing note is mirrored in its body's
+  `## Related` (a `gm_only` edge in `### Hidden Ties`), per
+  `shared/entity-schema.md` § Relationships; `entity-new` writes a new
+  note's.
 - **Campaign logs:** each NPC, Location, Item, Organization or
   Creature that appeared this session gets one bullet in its
   `## Campaign Log` (a Creature's is `## Encounters`), as the party
   saw it: `- **[[Session link]]** — {what happened}`. Other entity
   types' templates carry no such section — don't add one unless the
   GM asks. Where the truth differs, add the matching bullet to its
-  GM Notes `### Behind the Scenes`. One `=== log` block places them
+  GM Notes `### Behind the Scenes`; a fate the players haven't learned
+  (dead, captive, missing, turned) opens it in plain words, **Dead.**
+  or **Captive, in the ice crypt.**, never the brief's euphemism.
+  When a later session changes that fate, seen or not, strike the old
+  one through and state the new one. One `=== log` block places them
   all, no note read first: rows
   `<path><TAB>Campaign Log<TAB>{bullet}`, or
   `GM Notes/Behind the Scenes` (a note the batch creates first can
@@ -318,9 +350,11 @@ creating entities.
   timeline already uses. A `=== timeline --under "<the heading this
   timeline files the session under>"` block places them (a new
   heading takes its hashes, `--after` sites it).
-- **Events:** a `note-new` block from `_Templates/_Template_Event.md`
-  (dated with `in_game_date:`) when a moment meets its threshold — see
-  `shared/templates/event.md`'s comment if the vault copy lacks one.
+- **Events:** an `entity-new --type event --date <play date> --session
+  "<asOfSession value>"` block (dated with `in_game_date:`) when a moment
+  meets its threshold — see `shared/templates/event.md`'s comment if the
+  vault copy lacks one — linked from the Wrap-Up (its Memorable Moments
+  bullet, or the recap line that tells it).
 
 Every note this step creates or changes shows in step 5b's review:
 no separate receipts, and the Wrap-Up only wiki-links entities.
@@ -330,7 +364,7 @@ no separate receipts, and the Wrap-Up only wiki-links entities.
 If `_Campaign/Campaign Overview.md` exists, a block:
 
 ```text
-=== stamp "_Campaign/Campaign Overview.md" --set current_game_date="<in-game date at session end>" --increment sessions_played --set last_session="[[<this session's index title>]]" --set last_play_date=YYYY-MM-DD --session "<asOfSession value>" --date YYYY-MM-DD
+=== stamp "_Campaign/Campaign Overview.md" --set current_game_date="<in-game date at session end>" --increment sessions_played --set last_session="[[<this session's index title>]]" --set last_play_date=YYYY-MM-DD --advance status=not_started:in_progress --session "<asOfSession value>" --date YYYY-MM-DD
 ```
 
 `--session` takes the Overview's own shape, as in 3c.
@@ -341,7 +375,14 @@ far as the notes say time passed; ask the GM if unsure. "October
 1923" never replaces "October 17, 1923".
 
 Leave `current_arc`, `arcs_planned`, `current_chapter`,
-`chapters_planned`, `status` and the body to the GM.
+`chapters_planned` and the body to the GM; `status` only moves from
+`not_started` (the `--advance` above). One exception: a `## Current
+Arc` that still opens "Not yet begun." gets a `=== section
+"_Campaign/Campaign Overview.md" "Current Arc" --replace` block: in
+place of those three words, two sentences from the Handoff (where
+things stand, the live tension), written for the players since the
+section publishes; then the rest of the section exactly as it is.
+5b shows it for the GM's yes.
 
 ### 4c. World Fact Scan
 
@@ -456,3 +497,5 @@ else.
 ### 7. Pictures
 
 Only if the version check printed `# pictures on:`, then once everything above is done and reported, follow "When no one asked" in `gma llms image` for the notes this session created and the session's big moments.
+
+If it printed `# pictures off:` instead, end the report with one line, not a question: this session has no scene pictures because drawing without asking is off; say "draw them" for this session's pictures, or ask to turn drawing without asking on for every session. Draw nothing unless the GM then asks; on "draw them", follow `gma llms image` as an asked-for run (no `--unprompted`) for the same pictures as above: the session's big moments and the notes it created that have none.
