@@ -73,6 +73,8 @@ old copy would hide every later fix. Keep `modes.json`, `state/` and the logs.
 
 `tests/test_harness_engine.py` fails when a flow reads a skill file that no
 longer exists, or a skill has no flow. Rename a reference file and its flow
-in the same change. The harness's own tests live in `harness/tests/` and run
-in the same CI step; `test_harness.py` copies a real vault
-(`GMA_VAULT=<path>`) and is skipped without one.
+in the same change. The harness's own tests live in `harness/tests/`. CI runs
+two of them, the flow engine (`test_flow.py`) and the confirmation gate
+(`test_confirm_gate.py`); run the rest by hand when you change their hook.
+`test_harness.py` copies a real vault (`GMA_VAULT=<path>`) and skips
+without one.

@@ -4,7 +4,7 @@
 The harness conducts each skill by the steps in harness/flows/<skill>.json. A flow names
 reference files to read ("campaign-qa/references/checks/canon-audit.md"); when a skill renames
 or drops one, the flow would wait forever for a read that can no longer happen. These checks
-fail first. The harness's script tests (harness/tests/test_*.py) run here so CI runs them too.
+fail first. Two harness script tests (the flow engine and the confirmation gate) run here too.
 
 Run: python3 -m pytest tests/test_harness_engine.py
 """
@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HARNESS = ROOT / "harness"
 SKILLS = ROOT / "skills"
 LOCAL_SKILLS = {"qa-passo"}   # a vault's own skill, conducted by the same engine
+CI_SCRIPTS = ("test_flow.py", "test_confirm_gate.py")
 
 
 def flows():
@@ -82,7 +83,8 @@ class HarnessScriptTests(unittest.TestCase):
         env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
         env.update(PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
         env.pop("GMA_VAULT", None)              # the golden test needs a real vault: skipped here
-        for script in sorted((HARNESS / "tests").glob("test_*.py")):
+        # Only the engine and the confirmation gate run in CI; the other harness scripts are run by hand.
+        for script in (HARNESS / "tests" / name for name in CI_SCRIPTS):
             with self.subTest(script=script.name):
                 r = subprocess.run([sys.executable, str(script)], cwd=str(script.parent), env=env,
                                    capture_output=True, timeout=600)
