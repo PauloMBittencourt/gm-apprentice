@@ -2,9 +2,8 @@
 
 Entradas (scripts finos que chamam run(<funcao>)):
   pretool.py  -> pre_main   (PreToolUse):  skill obrigatória + gates de leitura/comando antes de gravar
-  posttool.py -> post_main  (PostToolUse): gate de conteúdo (vault-check) + checklist ao chamar Skill
-  prompt.py   -> prompt_main (UserPromptSubmit): checklist quando o mestre invoca /skill
-  stop.py     -> stop_main  (Stop): afirmação x evidência + gate de conteúdo nos arquivos alterados
+  posttool.py -> post_main  (PostToolUse): gate de conteúdo (vault-check) a cada nota gravada
+A checklist e o Stop saíram na ablação de 2026-11-19: o motor de fluxos (flow_hook.py) faz os dois.
 
 Falha aberta: qualquer erro do próprio harness vira linha em hook-errors.log e exit 0,
 para um bug aqui nunca travar o projeto. Para desligar tudo: crie .claude/harness/OFF no vault.
@@ -16,7 +15,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -103,7 +101,7 @@ def load_state(sid):
     try:
         return json.loads(state_path(sid).read_text(encoding="utf-8"))
     except Exception:
-        return {"content": {}, "stop_blocks": 0}
+        return {"content": {}}
 
 
 def save_state(sid, st):
@@ -361,14 +359,6 @@ def post_main():
     inp = d.get("tool_input") or {}
     sid = d.get("session_id")
 
-    if tool == "Skill":
-        name = str(inp.get("skill", "")).split(":")[-1]
-        txt = checklist_text(name, Session(d.get("transcript_path")))
-        if txt:
-            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse",
-                                                     "additionalContext": txt}}, ensure_ascii=False))
-        return
-
     if tool not in WRITE_TOOLS:
         return
     rel = rel_to_project(inp.get("file_path") or inp.get("notebook_path"))
@@ -390,109 +380,3 @@ def post_main():
           f"(tentativa {n + 1}/{cg['max_attempts_per_file']}):\n" + "\n".join(f"- {r}" for r in rows) +
           "\nCorrija a nota; a checagem roda de novo ao salvar. Se o aviso for intencional, "
           "diga ao mestre em vez de forçar.")
-
-
-# ---------------------------------------------------------------- checklist (guia no momento certo)
-
-def checklist_text(skill, sess):
-    if skill not in SKILLS:
-        return ""
-    lines = [f"[harness] O vault registrou a skill {skill} como ativa nesta sessão. Passos obrigatórios:"]
-    lines += [f"- {x}" for x in CFG["checklists"].get(skill, [])]
-    pend = []
-    for g in CFG["gates"]:
-        if skill in g["skills"] and g.get("checklist", True):
-            miss = missing_for(g, sess)
-            if miss:
-                pend.append(f"{g['id']}: " + "; ".join(miss[:14]) + (" ..." if len(miss) > 14 else ""))
-    if pend:
-        lines.append("Pendências verificadas por script antes de poder gravar ou executar (estado atual):")
-        lines += [f"- {p}" for p in pend]
-    lines.append("Estes gates são conferidos por hooks; a gravação só passa depois de cumpridos.")
-    return "\n".join(lines)
-
-
-def prompt_main():
-    d = load_input()
-    prompt = str(d.get("prompt", ""))
-    m = re.match(r"\s*/(?:gm-apprentice:)?([\w-]+)", prompt)
-    if not m or m.group(1) not in SKILLS:
-        return
-    txt = checklist_text(m.group(1), Session(d.get("transcript_path")))
-    if txt:
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
-                                                 "additionalContext": txt}}, ensure_ascii=False))
-
-
-# ---------------------------------------------------------------- Stop
-
-def changed_files(first_ts):
-    try:
-        r = subprocess.run(["git", "-c", "core.quotepath=false", "status", "--porcelain", "-z"],
-                           cwd=str(PROJECT), capture_output=True, timeout=30)
-    except Exception:
-        return []
-    t0 = 0
-    if first_ts:
-        try:
-            t0 = datetime.fromisoformat(first_ts.replace("Z", "+00:00")).timestamp() - 5
-        except Exception:
-            t0 = 0
-    out, entries, i = [], r.stdout.decode("utf-8", errors="replace").split("\0"), 0
-    while i < len(entries):
-        e = entries[i]
-        i += 1
-        if len(e) < 4:
-            continue
-        status, path = e[:2], e[3:]
-        if "R" in status or "C" in status:
-            i += 1
-        full = PROJECT / path
-        try:
-            if full.is_file() and full.stat().st_mtime >= t0:
-                out.append(path.replace("\\", "/"))
-        except Exception:
-            pass
-    return out
-
-
-def stop_main():
-    d = load_input()
-    sid = d.get("session_id")
-    sg = CFG["stop_gate"]
-    st = load_state(sid)
-    if st.get("stop_blocks", 0) >= sg["max_blocks_per_session"]:
-        return
-    sess = Session(d.get("transcript_path"))
-    last = d.get("last_assistant_message") or sess.last_text or ""
-    invoked = sess.invoked()
-    problems = []
-
-    claim = re.search(sg["claim_regex"], last, re.I) and not re.search(sg["honesty_valve_regex"], last, re.I)
-    if claim and "campaign-qa" in invoked:
-        g = next((x for x in CFG["gates"] if x["id"] == "qa-relatorio-completo"), None)
-        if g:
-            miss = missing_for(g, sess)
-            if miss:
-                problems.append("Você declarou a auditoria concluída, mas a cobertura exigida pela skill está incompleta:\n" +
-                                "\n".join(f"  - {m}" for m in miss[:20]) +
-                                "\n  Complete esses passos ou diga explicitamente que a cobertura é parcial e quais modos ficaram de fora.")
-
-    changed = [c for c in changed_files(sess.first_ts)
-               if c.endswith(".md") and not any_re(CFG["content_gate"]["exempt_paths"], c)]
-    if changed:
-        bad = []
-        for c in changed[:CFG["content_gate"]["stop_max_files"]]:
-            bad += content_check(c, {"ERROR"})
-        if bad:
-            problems.append("O vault-check ainda aponta ERROR em notas alteradas nesta sessão:\n" +
-                            "\n".join(f"  - {b}" for b in bad[:25]))
-        for sr in CFG["stop_requires"]:
-            if invoked & set(sr["skills"]) and any(re.search(sr["if_changed"], c) for c in changed):
-                if not all(sess.has_cmd(rc) for rc in sr["require_cmds"]):
-                    problems.append(sr["message"])
-
-    if problems:
-        st["stop_blocks"] = st.get("stop_blocks", 0) + 1
-        save_state(sid, st)
-        block("[GATE DE FECHAMENTO] Não encerre ainda:\n" + "\n".join(problems))

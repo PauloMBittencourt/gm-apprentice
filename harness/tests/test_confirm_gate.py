@@ -55,6 +55,23 @@ def test_negacao_do_mestre_nega():
         assert cg.check(ev(("proposal", PROPOSTA), ("user", resp)), ARQUIVO), resp
 
 
+def test_negacao_seguida_de_aceite_passa():
+    # caso real de 2026-11-18: o "não" era sobre outra coisa
+    assert cg.check(ev(("proposal", PROPOSTA), ("user", "Não toque não, pode gravar o resto")), ARQUIVO) is None
+
+
+def test_nao_pode_gravar_continua_recusa():
+    for resp in ("não pode gravar", "Não, não pode gravar isso", "não, pode esperar",
+                 "não, pode fazer de novo com outro tom"):
+        assert cg.check(ev(("proposal", PROPOSTA), ("user", resp)), ARQUIVO), resp
+
+
+def test_indice_do_mundo_nao_e_protegido():
+    assert cg.protected_folder(str(PROJECT / "_World" / "world-index.md")) is None
+    assert cg.protected_folder(str(PROJECT / "_World" / "politica.md")) == "_World"
+    assert cg.protected_folder(str(PROJECT / "_World" / "magia-index.md")) == "_World"
+
+
 def test_proposta_depois_do_turno_nao_vale():
     # o modelo escreveu a proposta e já foi gravar no mesmo turno, sem o mestre ver
     evs = ev(("user", "pode seguir"), ("proposal", PROPOSTA))

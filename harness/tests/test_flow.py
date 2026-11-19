@@ -272,6 +272,22 @@ rc, o, e = hook("PreToolUse", t.save(), tool_name="Write",
 check("T9e gravar o relatório com passos pendentes é barrado", rc == 2 and "canon" in e, f"rc={rc} {e[:200]}")
 rc, o, e = hook("PreToolUse", t.save(), tool_name="Write", tool_input={"file_path": str(PROJ / "Characters/NPCs/N00.md")})
 check("T9f gravar outra nota não é barrado por este hook", rc == 0)
+# ablação 2026-11-19: falsos positivos reais
+rc, o, e = hook("PreToolUse", t.save(), tool_name="Bash", tool_input={
+    "command": "wc -l _QA/*.md 2>/dev/null; head -80 _QA/QA_full_audit_2026-11-16_2.md; ls -la _QA/"})
+check("T9f2 ler o relatório antigo com head não é gravação", rc == 0, f"rc={rc} {e[:200]}")
+rc, o, e = hook("PreToolUse", t.save(), tool_name="Bash", tool_input={
+    "command": "echo x > _QA/QA_full_audit_2026-11-17.md"})
+check("T9f3 gravar o relatório pelo shell continua barrado", rc == 2, f"rc={rc} {e[:200]}")
+rc, o, e = hook("Stop", t.save(), session_id="pergunta1",
+                last_assistant_message="A versão confere. Quer o vault inteiro ou só o capítulo 2?")
+check("T9f4 parar para perguntar ao mestre não é barrado", rc == 0, f"rc={rc} {e[:200]}")
+rc, o, e = hook("Stop", t.save(), session_id="pergunta2",
+                last_assistant_message="Terminei todos os modos da auditoria. Quer que eu corrija algum achado?")
+check("T9f5 declarar concluído e terminar com pergunta continua barrado", rc == 2, f"rc={rc} {e[:200]}")
+rc, o, e = hook("PreToolUse", t.save(), tool_name="Bash", tool_input={
+    "command": 'cat > "C:/x/LA a Noite - Vault/_QA/QA_full_audit_1.md" <<EOF\nx\nEOF'})
+check("T9f6 gravar o relatório num caminho com espaços continua barrado", rc == 2, f"rc={rc} {e[:200]}")
 
 # PostToolUse: artefato inválido barra, passo novo anuncia uma vez
 t = T(); t.user("<command-name>/qa-passo</command-name>"); do_step(t, "versao"); do_step(t, "canon")

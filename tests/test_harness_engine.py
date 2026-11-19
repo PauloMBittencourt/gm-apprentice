@@ -50,6 +50,12 @@ class FlowsMatchSkillsTests(unittest.TestCase):
                 if path.split("/")[0] in skill_dirs and not (SKILLS / path).exists()]
         self.assertEqual(gone, [])
 
+    def test_no_control_characters_in_harness_code(self):
+        # A regex written through a shell heredoc once lost "\\b" to a real backspace and never matched.
+        bad = [p.relative_to(ROOT).as_posix() for p in HARNESS.rglob("*") if p.suffix in (".py", ".json")
+               and any(ord(c) < 32 and c not in "\n\r\t" for c in p.read_text(encoding="utf-8"))]
+        self.assertEqual(bad, [])
+
     def test_step_ids_are_unique_per_mode(self):
         for name, spec in flows().items():
             for mode, steps in spec["modes"].items():

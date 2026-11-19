@@ -40,6 +40,9 @@ STATE = HARNESS / "state"
 PROTECTED = {"_World": "enforce", "_midwife": "observe"}   # padrão quando o modes.json não diz nada
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit"}
 SHELL_TOOLS = {"Bash", "PowerShell", "mcp__terminal__run_in_terminal"}
+# "Não toque no nome, pode gravar o resto" é aceite: a negação vale só sem um "pode gravar/seguir..." depois.
+ACCEPT = re.compile(r"[,.;:!]\s*(?:e\s+|mas\s+)?pode\s+(?:gravar|seguir|salvar|botar|colocar|escrever)\b", re.I)
+REFUSE = re.compile(r"\bn[ãa]o\s+pode\s+(?:gravar|seguir|salvar|botar|colocar|escrever)\b", re.I)
 NEGATION = re.compile(r"^\W*(n[ãa]o\b|calma|espera|pera\b|errado|errou|pare\b|para\s+(?:a[ií]|tudo)|nada disso|cancela)",
                       re.I)
 SHELL_VERBS = (r"\b(tee|mv|cp|rm|rmdir|mkdir|touch|rename|ren|del|erase|ln|truncate|dd|Set-Content|Out-File|"
@@ -182,6 +185,8 @@ def protected_folder(path_str: str):
         rel = Path(path_str).resolve().relative_to(PROJECT.resolve()).as_posix()
     except Exception:
         pass
+    if re.search(r"(?:^|/)(?:world-)?index\.md$", rel):     # índice só lista e liga notas: não é texto de mundo
+        return None
     for folder in PROTECTED:
         if re.search(rf"(?:^|/){folder}/", rel):
             return folder
@@ -200,7 +205,8 @@ def check(evs: list, added: str):
     proposal = next((e for e in reversed(evs) if e["ev"] == "proposal" and e["seq"] < last_user["seq"]), None)
     if proposal is None:
         return "O mestre ainda não viu nenhuma proposta. Mostre o texto exato que vai gravar e espere a resposta."
-    if NEGATION.search(last_user.get("text", "")):
+    said = last_user.get("text", "")
+    if REFUSE.search(said) or (NEGATION.search(said) and not ACCEPT.search(said)):
         return (f"A última resposta do mestre não é um aceite (\"{last_user['text'][:60]}\"). "
                 "Ajuste a proposta e pergunte de novo.")
     seen = norm(proposal.get("text", ""))

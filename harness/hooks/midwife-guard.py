@@ -22,6 +22,18 @@ def block(msg):
     print(f"BLOQUEADO pelo mestre: {msg}\nEstrutura permitida da the-midwife: {STRUCTURE}", file=sys.stderr)
     sys.exit(2)
 
+def single_note_delete(seg):
+    """`rm`, `git rm` ou `Remove-Item` de UM caminho .md dentro de _midwife/, sem -r, curinga nem metacaractere."""
+    s = seg.strip()
+    if re.search(r"[<>&$`|*?;]", s):
+        return False
+    m = re.fullmatch(r"(?:git\s+rm|rm|Remove-Item)(?:\s+-(?:f|LiteralPath))?\s+(\"[^\"]+\"|'[^']+'|\S+)", s, re.I)
+    if not m:
+        return False
+    path = m.group(1).strip("\"'")
+    return bool(re.search(r"(?:^|[/\\])_midwife[/\\]", path)) and path.lower().endswith(".md")
+
+
 data = json.load(sys.stdin)
 tool, inp = data.get("tool_name", ""), data.get("tool_input", {})
 
@@ -44,6 +56,9 @@ elif tool in ("Bash", "PowerShell"):
                r"--write|--apply|--execute|--fix")
     for seg in re.split(r";|&&|\|\||\||\n", cmd):
         if not re.search(r"_mid", seg, re.I):
+            continue
+        # A skill manda tirar o que foi superado: apagar UMA nota (sem -r, sem curinga) é permitido; o git guarda.
+        if single_note_delete(seg):
             continue
         if (re.search(r">>?\s*[\"']?[^\s\"'|;&]*_mid", seg, re.I)
                 or re.search(verbs, seg, re.I)

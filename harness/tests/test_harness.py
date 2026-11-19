@@ -78,33 +78,10 @@ rc, o, e, _ = pre("Write", {"file_path": note, "content": "x"},
                   tl(tools=tools, skill="campaign-organizer", cmds=['py gma.py vault-check "V" version']))
 check("T3c organizer completo passa", rc == 0, e)
 
-# T4: relatório de auditoria completa
-chk = ["canon-audit", "timeline-validation", "name-similarity", "clue-redundancy", "graph-health", "tone-words",
-       "legacy-canon-field-repair", "stale-draft-detection", "wrapup-conformance", "chapter-notes", "npc-pairs",
-       "settings", "open-spoilers"]
+# T4: o relatório da auditoria completa saiu dos gates antigos (ablação 2026-11-19): o fluxo campaign-qa cuida
 rep = str(V / "_QA" / "QA_full_audit_2026-11-17.md")
-part = [SK / "campaign-qa" / "references" / "checks" / f"{c}.md" for c in chk[:9]]
-rc, o, e, _ = pre("Write", {"file_path": rep, "content": "x"}, tl(tools=part, skill="campaign-qa"))
-check("T4a cobertura parcial bloqueia relatório", rc == 2 and "tone-words" not in e.split("Falta")[0] and "npc-pairs" in e, e)
-full = [SK / "campaign-qa" / "references" / "checks" / f"{c}.md" for c in chk]
-full.append(SK / "campaign-qa" / "references" / "world-audit-criteria.md")
-notes = sorted((V / "Characters" / "NPCs").glob("*.md"))[:45]
-cmds = ['py gma.py vault-check "V" version', 'py gma.py vault-check "V" timeline --order',
-        'py gma.py vault-check "V" stories']
-rc, o, e, _ = pre("Write", {"file_path": rep, "content": "x"},
-                  tl(tools=full + notes, skill="campaign-qa", cmds=cmds))
-check("T4b cobertura completa libera relatório", rc == 0, e)
-rc, o, e, _ = pre("Write", {"file_path": rep, "content": "x"},
-                  tl(tools=full + notes[:10], skill="campaign-qa", cmds=cmds))
-check("T4c poucas notas lidas bloqueia", rc == 2 and "notas do vault" in e, e)
-
-bash_reads = [f'cat "{p}"' for p in notes]
-rc, o, e, _ = pre("Write", {"file_path": rep, "content": "x"},
-                  tl(tools=full, skill="campaign-qa", cmds=cmds + bash_reads))
-check("T4d notas lidas pelo Bash (cat) contam", rc == 0, e)
-rc, o, e, _ = pre("Write", {"file_path": rep, "content": "x"},
-                  tl(tools=full, skill="campaign-qa", cmds=cmds + bash_reads[:10]))
-check("T4e so 10 notas via Bash ainda bloqueia", rc == 2 and "notas do vault" in e, e)
+rc, o, e, _ = pre("Write", {"file_path": rep, "content": "x"}, tl(skill="campaign-qa"))
+check("T4 gate antigo não barra mais o relatório", rc == 0, e)
 
 # T5: comandos
 rc, o, e, _ = pre("Bash", {"command": 'py "C:\\x\\gma.py" stamp-entities "V" "a.md" --set a=1 --write'}, tl())
@@ -132,34 +109,7 @@ for i in range(4):
                                   "transcript_path": tl(), "session_id": "t6"})
 check("T6c depois de 3 tentativas para de insistir", rc == 0)
 
-# T7: Stop
-txt_claim = "A auditoria foi refeita e nada crítico apareceu."
-rc, o, e, _ = hook("stop.py", {"session_id": "s1", "transcript_path": tl(tools=part, skill="campaign-qa"),
-                               "last_assistant_message": txt_claim, "stop_hook_active": False})
-check("T7a afirmação sem cobertura bloqueia", rc == 2 and "cobertura" in e, e)
-rc, o, e, _ = hook("stop.py", {"session_id": "s2", "transcript_path": tl(tools=part, skill="campaign-qa"),
-                               "last_assistant_message": "A auditoria foi parcial: não li as notas.", "stop_hook_active": False})
-check("T7b declarar parcial libera", rc == 0, e)
-rc, o, e, _ = hook("stop.py", {"session_id": "s3", "transcript_path": tl(tools=part, skill="campaign-qa"),
-                               "last_assistant_message": "Qual o escopo?", "stop_hook_active": False})
-check("T7c pergunta comum não bloqueia", rc == 0, e)
-for i in range(3):
-    rc, *_ = hook("stop.py", {"session_id": "s4", "transcript_path": tl(tools=part, skill="campaign-qa"),
-                              "last_assistant_message": txt_claim, "stop_hook_active": True})
-check("T7d teto de bloqueios (2) respeitado", rc == 0)
-
-# T8: prompt e Skill
-rc, o, e, _ = hook("prompt.py", {"prompt": "/gm-apprentice:campaign-qa revise tudo", "transcript_path": tl(), "session_id": "p"})
-check("T8a /skill injeta checklist", rc == 0 and "additionalContext" in o and "campaign-qa" in o, o + e)
-rc, o, e, _ = hook("prompt.py", {"prompt": "oi, tudo bem?", "transcript_path": tl(), "session_id": "p"})
-check("T8b prompt comum não injeta", rc == 0 and not o.strip())
-rc, o, e, _ = hook("posttool.py", {"tool_name": "Skill", "tool_input": {"skill": "gm-apprentice:session-wrapup"},
-                                   "transcript_path": tl(), "session_id": "p"})
-check("T8c Skill injeta checklist com pendências", rc == 0 and "additionalContext" in o, o + e)
-rc, o, e, _ = hook("posttool.py", {"tool_name": "Skill", "tool_input": {"skill": "gm-apprentice:campaign-qa"},
-                                   "transcript_path": tl(), "session_id": "p"})
-check("T8d checklist tem prefixo [harness] e omite o gate de modo único",
-      "[harness]" in o and "qa-relatorio-modo" not in o and "qa-relatorio-completo" in o, o)
+# T7/T8 (Stop e checklist) saíram na ablação de 2026-11-19; o flow_hook faz os dois (test_flow.py).
 
 # T9: robustez
 r = subprocess.run([sys.executable, str(HOOKS / "pretool.py")], input=b"isso nao e json", capture_output=True)

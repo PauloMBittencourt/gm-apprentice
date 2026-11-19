@@ -35,6 +35,8 @@ except Exception:  # um juiz corrompido (ex.: skills.json) derrubaria tudo em si
 
 RUN_DIR = "_QA/.run/"
 MAX_STOP_BLOCKS = 2
+ASK_MAX = 400          # pergunta ao mestre: curta. Relatório que termina em "quer que eu corrija?" não conta
+CLAIM_DONE = r"\b(terminei|conclu[íi]|finalizei|est[áa] pronto|tudo feito|auditoria (?:completa|feita|conclu))"
 
 # O que o fluxo não pode alterar: o próprio harness, as skills do vault, a configuração e as regras do vault.
 PROTECTED_REL = [r"^\.claude/harness/", r"^\.claude/skills/", r"^\.claude/settings(\.local)?\.json$", r"^CLAUDE\.md$"]
@@ -109,9 +111,12 @@ def writes_final(cmd: str, final_rx: str) -> bool:
     """O comando grava um arquivo que casa com o padrão do arquivo final? (heurística: nome base + verbo de escrita)"""
     base = final_rx.strip("^$").split("/")[-1]
     stem = re.sub(r"\\\.\w+$", "", base).replace(".*", "")      # "QA_full_audit_.*\.md" -> "QA_full_audit_"
-    if not stem or stem not in cmd:
-        return False
-    return bool(re.search(r">>?", cmd) or re.search(WRITE_VERBS, cmd, re.I) or re.search(PY_WRITE, cmd))
+    cmd = re.sub(r"\d*>\s*(/dev/null|&\d|\$null)", "", cmd)          # 2>/dev/null não é gravação
+    for seg in re.split(r";|&&|\|\||\||\n", cmd):                       # só o segmento que cita o arquivo conta
+        if stem in seg and (re.search(r">>?\s*(?:\"[^\"]*|'[^']*|[^\s\"'|;&]*)" + re.escape(stem), seg)
+                            or re.search(WRITE_VERBS, seg, re.I) or re.search(PY_WRITE, seg)):
+            return True
+    return False
 
 
 def main():
@@ -217,6 +222,9 @@ def main():
             return
         if fs.get("stop", 0) >= MAX_STOP_BLOCKS:
             return
+        last = (d.get("last_assistant_message") or "").rstrip().rstrip("*_ ")
+        if last.endswith("?") and len(last) <= ASK_MAX and not re.search(CLAIM_DONE, last, re.I):
+            return             # parou para perguntar ao mestre (a skill manda, ex.: escopo): o fluxo segue na resposta
         if mode("flow.stop") == "enforce":
             fs["stop"] = fs.get("stop", 0) + 1
             save_state(sid, st)
