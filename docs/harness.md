@@ -23,8 +23,9 @@ the other `npx skills` harnesses the skills work without it.
   - `confirmacao@_World` and both `forma@` guards block unless `modes.json`
     sets them to `observe` or `off`;
   - the older gates switch on and cannot be set to observe: no vault write
-    without a gm-apprentice skill loaded, the content check after each note
-    write, the Stop check, and the `_midwife/` structure guard.
+    without a gm-apprentice skill loaded, the per-skill read and command
+    gates in `skills.json`, the content check after each note write, and the
+    `_midwife/` structure guard.
 - **Turning it off:** create `<vault>/.claude/harness/OFF`; delete it to turn
   the harness back on.
 
@@ -42,16 +43,18 @@ the other `npx skills` harnesses the skills work without it.
 
 | Guard | What it stops |
 |---|---|
-| `flow.stop` | ending the turn with a step still open |
+| `flow.stop` | ending the turn with a step still open, unless the reply is a short question to the GM that does not claim the work is done |
 | `flow.report` | writing a flow's final report before every step has evidence |
 | `flow.artifact` | a step file in `_QA/.run/` that fails its check |
 | `flow.protect` | editing the harness, the vault's skills, settings or `CLAUDE.md` while a flow runs |
-| `confirmacao@_World`, `confirmacao@_midwife` | writing a line the GM was not shown and did not accept |
+| `confirmacao@_World`, `confirmacao@_midwife` | writing a line the GM was not shown and did not accept (index notes are exempt; "não ..., pode gravar" counts as a yes) |
 | `forma@the-midwife`, `forma@ttrpg-expert` | more than one question, or a reply over `forma.max_chars` |
 
 The older gates (`skills.json`, the content check after each note write, the
 `_midwife/` structure guard) only block, with no observe mode, so they run
-only in a vault that opted in.
+only in a vault that opted in. The `_midwife/` guard lets the shell delete a
+single note (no `-r`, no wildcard), since the-midwife drops what was
+superseded.
 
 Add `state/`, `observe.log` and `hook-errors.log` under
 `.claude/harness/` to the vault's `.gitignore`: `state/` keeps the full text

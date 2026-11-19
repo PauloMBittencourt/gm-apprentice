@@ -30,6 +30,17 @@ case("ls _midwife", B, {"command": "ls _midwife"}, 0)
 case("cat de arquivo do _midwife com saida em /tmp", B, {"command": "cat _midwife/index.md > /tmp/out.txt"}, 0)
 case("grep dentro de _midwife", B, {"command": 'grep -rn "Bell" _midwife/'}, 0)
 case("redirecionamento inofensivo", B, {"command": "ls _midwife 2>/dev/null"}, 0)
+case("apagar uma nota superada (rm)", B, {"command": 'rm "_midwife/grandes-arcos/rosto-do-traidor.md"'}, 0)
+case("apagar uma nota superada (Remove-Item, caso real)", "PowerShell",
+     {"command": 'Remove-Item -LiteralPath "C:\\V\\_midwife\\grandes-arcos\\rosto-do-traidor.md"'}, 0)
+case("apagar com curinga continua barrado", B, {"command": "rm _midwife/seeds/*.md"}, 2)
+for abuso in ("rm -rf _midwife/ x.md", "rm -r _midwife/seeds/ _midwife/index.md", "git rm -r _midwife/x.md",
+              "rm _midwife/a.md _midwife/b.md", "rm _midwife/a.md & touch _midwife/b.md",
+              "rm _midwife/a.md > _midwife/b.md", "rm _midwife/a.md `cp /tmp/e _midwife/index.md`.md",
+              "rm _midwife/$(touch _midwife/z).md"):
+    case(f"abuso da exceção de apagar: {abuso}", B, {"command": abuso}, 2)
+case("Remove-Item -Recurse continua barrado", "PowerShell",
+     {"command": "Remove-Item -Recurse -Force C:\\V\\_midwife\\ , C:\\V\\x.md"}, 2)
 # devem BLOQUEAR
 case("redirecionamento para _midwife", B, {"command": "echo oi > _midwife/x.md"}, 2)
 case("append em _midwife", B, {"command": "echo oi >> _midwife/index.md"}, 2)

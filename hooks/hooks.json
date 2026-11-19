@@ -30,7 +30,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Skill",
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
@@ -65,11 +65,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/harness/bin/hook\" stop",
-            "timeout": 180
-          },
-          {
-            "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/harness/bin/hook\" flow_hook",
             "timeout": 60
           },
@@ -89,11 +84,6 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/harness/bin/hook\" prompt",
-            "timeout": 30
-          },
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/harness/bin/hook\" flow_hook",

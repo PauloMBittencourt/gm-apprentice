@@ -9,6 +9,16 @@ Releases before 1.11.0 are in [docs/history/changelog-archive.md](docs/history/c
 
 ---
 
+## [1.12.35] — 2026-11-19
+
+### Removed
+
+- The harness's own Stop check, the old campaign-qa report gates and the checklist injected on loading a skill: the flow engine already does each, and in nine real sessions none of them caught anything the flows missed.
+
+### Fixed
+
+- The harness no longer stops a skill from asking the GM a question it must ask, reads "não toque nisso, pode gravar o resto" as a yes, lets index notes in `_World/` be written without a proposal, no longer takes reading the old audit report for writing it, and lets the-midwife delete a superseded note.
+
 ## [1.12.34] — 2026-11-19
 
 ### Added
