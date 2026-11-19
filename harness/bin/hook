@@ -1,0 +1,9 @@
+#!/bin/sh
+# Roda um hook do harness (harness/hooks/<nome>.py) com o Python que a máquina tiver.
+# Fora de um vault do gm-apprentice sai na hora, sem nem abrir o Python.
+[ -f "${CLAUDE_PROJECT_DIR:-.}/_meta/vault-state.json" ] || exit 0
+H="$(dirname "$0")/../hooks/$1.py"
+export PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+if command -v py >/dev/null 2>&1; then exec py -3 "$H"; fi
+if command -v python3 >/dev/null 2>&1; then exec python3 "$H"; fi
+exec python "$H"

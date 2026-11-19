@@ -1,0 +1,189 @@
+{
+  "schema": 1,
+  "skill": "campaign-organizer",
+  "status": "rascunho",
+  "source": "SKILL.md 1.12.33, extraído à mão; não testado",
+  "skill_md_sha256": null,
+  "strict_order": false,
+  "modes": {
+    "organizar": [
+      {
+        "id": "caminho",
+        "title": "Perguntar onde trabalhar (nunca assumir o diretório atual)",
+        "evidence": [
+          {
+            "human": "caminho-de-trabalho",
+            "kind": "pergunta"
+          }
+        ]
+      },
+      {
+        "id": "esquema",
+        "title": "Ler o esquema vivo de _meta/",
+        "evidence": [
+          {
+            "read": [
+              "_meta/entity-types.md",
+              "_meta/relationship-types.md",
+              "_meta/index.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "levantar",
+        "title": "Inventário: capítulos, tipos, períodos",
+        "evidence": [
+          {
+            "artifact": "_QA/.run/*organizar-inventario*.md",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "estrutura",
+        "title": "Propor a estrutura ao mestre",
+        "evidence": [
+          {
+            "human": "estrutura-proposta",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "extrair",
+        "title": "Uma nota por entidade, a partir do template",
+        "evidence": [
+          {
+            "read": [
+              "_Templates/_Template_"
+            ],
+            "any": true
+          },
+          {
+            "lint": "tocados"
+          }
+        ]
+      },
+      {
+        "id": "ligacoes",
+        "title": "Passe de ligações",
+        "evidence": [
+          {
+            "lint": "tocados"
+          }
+        ]
+      },
+      {
+        "id": "grafo",
+        "title": "Auditoria do grafo",
+        "evidence": [
+          {
+            "read": [
+              "campaign-organizer/references/graph-hygiene.md"
+            ]
+          },
+          {
+            "run": "graph-check.*\\ball\\b"
+          }
+        ]
+      },
+      {
+        "id": "indice",
+        "title": "Atualizar o índice (prévia e depois --write)",
+        "evidence": [
+          {
+            "run": "index-build"
+          },
+          {
+            "run": "index-build.*--write"
+          }
+        ]
+      },
+      {
+        "id": "relatorio",
+        "title": "Relatório: contagens, esboços, saúde do grafo",
+        "evidence": [
+          {
+            "artifact": "_QA/.run/*organizar-relatorio*.md",
+            "validate": false
+          }
+        ]
+      }
+    ],
+    "validar": [
+      {
+        "id": "caminho",
+        "title": "Onde trabalhar",
+        "evidence": [
+          {
+            "human": "caminho-de-trabalho",
+            "kind": "pergunta"
+          }
+        ]
+      },
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "estrutural",
+        "title": "graph-check, links e vault-check all",
+        "evidence": [
+          {
+            "run": "graph-check.*\\ball\\b"
+          },
+          {
+            "run": "gma\\.py\"?\\s+links\\b"
+          },
+          {
+            "run": "vault-check.*\\ball\\b"
+          }
+        ]
+      },
+      {
+        "id": "relacoes",
+        "title": "Relações: check e fix",
+        "evidence": [
+          {
+            "read": [
+              "campaign-organizer/references/graph-hygiene.md"
+            ]
+          },
+          {
+            "run": "publish\\s+relationships\\s+(check|fix)"
+          }
+        ]
+      },
+      {
+        "id": "relatorio",
+        "title": "Relatório com severidade e correções",
+        "evidence": [
+          {
+            "artifact": "_QA/.run/*validar*.md",
+            "validate": false
+          }
+        ]
+      }
+    ]
+  },
+  "mode_triggers": {
+    "validar": "valid|check|health|orphan|[óo]rf[ãa]o|integrity|sa[úu]de"
+  },
+  "mode_default": "organizar",
+  "hook": {}
+}

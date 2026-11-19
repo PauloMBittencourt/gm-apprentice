@@ -1,0 +1,198 @@
+{
+  "_leia-me": "Configuração do harness. Cada gate só vale se uma das skills listadas foi invocada na sessão. Para desligar tudo: crie o arquivo .claude/harness/OFF.",
+
+  "skills": [
+    "the-midwife", "ttrpg-expert", "session-prep", "session-play", "session-wrapup",
+    "campaign-organizer", "campaign-qa", "vault-ingest", "publish-site", "qa-passo"
+  ],
+
+  "routing": {
+    "arcos, aventuras, ideias de campanha": "the-midwife",
+    "regras, PNJs, cenas, conteúdo, continuidade": "ttrpg-expert",
+    "preparar sessão": "session-prep",
+    "durante a sessão": "session-play",
+    "depois da sessão (recap, canon)": "session-wrapup",
+    "estrutura do vault, ligações, entidades": "campaign-organizer",
+    "auditoria, contradições, saúde do vault": "campaign-qa",
+    "material antigo": "vault-ingest",
+    "site dos jogadores": "publish-site"
+  },
+
+  "exempt_write_paths": [
+    "^\\.claude/", "^CLAUDE\\.md$", "^\\.gitignore$", "^\\.git/"
+  ],
+
+  "vault_write_commands": "gma(\\.py)?\"?\\s+(vault-write|stamp-entities|index-build|relink|links|prop-move|reveal|tones|migrate|update|ingest-images|ingest-survey)\\b.*(--write|--apply|--execute)|gma(\\.py)?\"?\\s+vault-check\\b.*(--fix|report-new)",
+
+  "version_cmd": "vault-check.*\\bversion\\b",
+
+  "content_gate": {
+    "exempt_paths": ["^_midwife/", "^_QA/", "^_inbox/", "^_Archive/", "^_archive/", "^\\.claude/", "^_attachments/"],
+    "max_attempts_per_file": 3,
+    "stop_max_files": 25
+  },
+
+  "stop_gate": {
+    "max_blocks_per_session": 2,
+    "claim_regex": "auditoria[^.\\n]{0,40}\\b(foi|est[aá]|ficou|foram)\\s+(conclu[ií]d|termin|feit|refeit|finaliz)|\\b(conclu[ií]|terminei|finalizei|refiz)\\b[^.\\n]{0,30}auditoria|full audit (?:is )?complete",
+    "honesty_valve_regex": "parcial|incompleta|n[aã]o conclu|n[aã]o fiz|ficou sem|n[aã]o li "
+  },
+
+  "checklists": {
+    "campaign-qa": [
+      "Auditoria completa: ler o arquivo de checagem de cada modo ANTES de rodá-lo, na ordem da skill.",
+      "Rodar os scripts não basta: Canon Audit, Timeline, Clue Redundancy e Name Similarity exigem ler as notas.",
+      "Todo achado vai ao mestre para decisão; nada é descartado por conta própria.",
+      "O relatório em _QA/QA_full_audit_*.md só pode ser gravado depois da cobertura completa."
+    ],
+    "session-wrapup": [
+      "Ler shared/session-principles.md e shared/session-document-chain.md; rodar o Version Gate.",
+      "Gravar tudo em lote: wrapup-new/wrapup-add/stamp/status/log/timeline/threads via 'vault-write batch', com revisão do mestre antes do --write.",
+      "Depois do --write, corrigir todo ERROR das checagens que ele imprime."
+    ],
+    "session-prep": [
+      "Ler session-principles, session-document-chain, session-templates e arc-spotlight-reference.",
+      "Rodar 'session-context --prep' antes de qualquer leitura avulsa.",
+      "Nunca gerar intenção, destaque ou cenas sem decisão do mestre: vão para Open Questions."
+    ],
+    "session-play": [
+      "Na primeira invocação: Version Gate, 'session-context --play' e 'vault-check voices'.",
+      "Respostas curtas (1-5 frases). Notas vão para o Play Notes, sem reorganizar."
+    ],
+    "the-midwife": [
+      "Uma pergunta por mensagem. Só gravar em _midwife/ o que o mestre confirmou, na estrutura da skill.",
+      "Ler shared/session-principles.md e rodar o Version Gate; ler _midwife/index.md se existir."
+    ],
+    "campaign-organizer": [
+      "Perguntar o caminho de trabalho; ler _meta/entity-types.md, _meta/relationship-types.md e _meta/index.md.",
+      "Ler _Templates/_Template_{Tipo}.md antes de escrever qualquer entidade.",
+      "Ao fim de Organize/Weave: 'index-build' com prévia e depois --write."
+    ],
+    "vault-ingest": [
+      "Ler session-principles, session-document-chain e reconcile; rodar 'ingest-survey' antes de ler o material.",
+      "Ler classification-taxonomy (fase 1), keeper-interview (fase 4) e synthesis-templates (fase 5) antes de cada fase.",
+      "Rodar 'vault-check frontmatter --folder' por balde e corrigir todo ERROR."
+    ],
+    "publish-site": [
+      "Rodar 'vault-check version'. Antes de build/deploy: 'publish manifest publish-played'."
+    ],
+    "ttrpg-expert": [
+      "Regras/custos: 'gma rules-lookup' primeiro. Conteúdo gerado nasce DRAFT e só o mestre confirma."
+    ]
+  },
+
+  "gates": [
+    {
+      "id": "qa-relatorio-completo",
+      "skills": ["campaign-qa"],
+      "match": { "tools": ["Write", "Edit", "MultiEdit"], "path": "^_QA/QA_full_audit_.*\\.md$" },
+      "require_reads": [
+        "campaign-qa/references/checks/canon-audit.md",
+        "campaign-qa/references/checks/timeline-validation.md",
+        "campaign-qa/references/checks/name-similarity.md",
+        "campaign-qa/references/checks/clue-redundancy.md",
+        "campaign-qa/references/checks/graph-health.md",
+        "campaign-qa/references/checks/tone-words.md",
+        "campaign-qa/references/checks/legacy-canon-field-repair.md",
+        "campaign-qa/references/checks/stale-draft-detection.md",
+        "campaign-qa/references/checks/wrapup-conformance.md",
+        "campaign-qa/references/checks/chapter-notes.md",
+        "campaign-qa/references/checks/npc-pairs.md",
+        "campaign-qa/references/checks/settings.md",
+        "campaign-qa/references/checks/open-spoilers.md"
+      ],
+      "require_reads_if_dir": { "_World": ["campaign-qa/references/world-audit-criteria.md"] },
+      "require_cmds": ["vault-check.*\\bversion\\b", "vault-check.*timeline\\s+--order", "vault-check.*\\bstories\\b"],
+      "min_vault_reads": 40,
+      "message": "Auditoria completa: o relatório só é gravado depois de cobrir todos os modos."
+    },
+    {
+      "id": "qa-relatorio-modo",
+      "checklist": false,
+      "skills": ["campaign-qa"],
+      "match": { "tools": ["Write", "Edit", "MultiEdit"], "path": "^_QA/QA_(?!full_audit).*\\.md$" },
+      "require_reads_any": ["campaign-qa/references/checks/"],
+      "require_cmds": ["vault-check.*\\bversion\\b"],
+      "message": "Relatório de modo único: leia o arquivo de checagem do modo antes de gravar."
+    },
+    {
+      "id": "wrapup-gravar",
+      "skills": ["session-wrapup", "vault-ingest"],
+      "match": { "tools": ["Bash", "PowerShell", "mcp__terminal__run_in_terminal"], "cmd": "vault-write\\b.*\\bbatch\\b.*--write" },
+      "require_reads": ["shared/session-principles.md", "shared/session-document-chain.md"],
+      "require_cmds": ["vault-check.*\\bversion\\b"],
+      "message": "Wrap-up: gravar o lote só depois do Version Gate e da leitura das referências."
+    },
+    {
+      "id": "plano-gravar",
+      "skills": ["session-prep"],
+      "match": { "tools": ["Bash", "PowerShell", "mcp__terminal__run_in_terminal"], "cmd": "vault-write\\b.*\\bplan\\b.*--write" },
+      "require_reads": [
+        "shared/session-principles.md", "shared/session-document-chain.md",
+        "session-prep/references/session-templates.md", "ttrpg-expert/arc-spotlight-reference.md"
+      ],
+      "require_cmds": ["vault-check.*\\bversion\\b", "session-context.*--prep"],
+      "message": "Prep: o Plano só é gravado depois do contexto (--prep) e das referências."
+    },
+    {
+      "id": "play-notes-gravar",
+      "skills": ["session-play"],
+      "match": { "tools": ["Write", "Edit", "MultiEdit"], "path": "Play Notes\\.md$" },
+      "require_reads": ["shared/session-principles.md", "shared/session-document-chain.md"],
+      "require_cmds": ["vault-check.*\\bversion\\b", "session-context.*--play"],
+      "message": "Mesa: na primeira invocação rode o Version Gate e 'session-context --play'."
+    },
+    {
+      "id": "midwife-gravar",
+      "skills": ["the-midwife"],
+      "match": { "tools": ["Write", "Edit", "MultiEdit"], "path": "^_midwife/" },
+      "require_reads": ["shared/session-principles.md"],
+      "require_reads_if_exists": ["_midwife/index.md"],
+      "require_cmds": ["vault-check.*\\bversion\\b"],
+      "message": "Midwife: leia session-principles, rode o Version Gate e leia _midwife/index.md antes de gravar."
+    },
+    {
+      "id": "organizer-entidade",
+      "skills": ["campaign-organizer", "session-wrapup", "vault-ingest"],
+      "match": { "tools": ["Write"], "path": "^(Characters|Locations|Factions & Organizations|Items|Creatures|Organizations|Events|Chapters)/" },
+      "require_reads_any": ["_Templates/_Template_"],
+      "message": "Entidade nova: leia _Templates/_Template_{Tipo}.md antes de escrever (a regra da skill proíbe copiar de outra entidade)."
+    },
+    {
+      "id": "organizer-esquema",
+      "skills": ["campaign-organizer"],
+      "match": { "tools": ["Write", "Edit", "MultiEdit"], "path": "^(Characters|Locations|Factions & Organizations|Items|Creatures|Organizations|Events|Chapters|_Campaign)/" },
+      "require_reads_if_exists": ["_meta/entity-types.md", "_meta/relationship-types.md", "_meta/index.md"],
+      "require_cmds": ["vault-check.*\\bversion\\b"],
+      "message": "Organizer: leia o esquema de _meta/ e rode o Version Gate antes de gravar."
+    },
+    {
+      "id": "ingest-gravar",
+      "skills": ["vault-ingest"],
+      "match": { "tools": ["Write", "Edit", "MultiEdit"], "path": "^(?!_inbox/|_midwife/|\\.claude/)" },
+      "require_reads": [
+        "shared/session-principles.md", "shared/session-document-chain.md", "shared/reconcile.md",
+        "vault-ingest/references/classification-taxonomy.md", "vault-ingest/references/synthesis-templates.md"
+      ],
+      "require_cmds": ["vault-check.*\\bversion\\b", "ingest-survey"],
+      "message": "Ingest: rode o survey e leia as referências das fases antes de gravar no vault."
+    },
+    {
+      "id": "publicar-site",
+      "skills": ["publish-site"],
+      "match": { "tools": ["Bash", "PowerShell", "mcp__terminal__run_in_terminal"], "cmd": "publish\\s+deploy|npm run build|npx gm-apprentice-publish\\s+build" },
+      "require_cmds": ["vault-check.*\\bversion\\b", "publish\\s+manifest\\s+publish-played"],
+      "message": "Site: rode 'publish manifest publish-played' antes de build/deploy, para nenhuma sessão jogada ficar de fora."
+    }
+  ],
+
+  "stop_requires": [
+    {
+      "id": "organizer-indice",
+      "skills": ["campaign-organizer"],
+      "if_changed": "\\.md$",
+      "require_cmds": ["index-build.*--write"],
+      "message": "Organizer: houve notas alteradas e o índice não foi regenerado ('gma index-build <vault> --write')."
+    }
+  ]
+}

@@ -1,0 +1,209 @@
+{
+  "schema": 1,
+  "skill": "the-midwife",
+  "status": "rascunho",
+  "source": "SKILL.md 1.12.33 + references/worldbuilding-mode.md (modo mundo revisado em 2026-11-18)",
+  "skill_md_sha256": null,
+  "strict_order": false,
+  "nota": "Conversa criativa: os passos de fase são portões humanos. Só se grava em _midwife/ o que o mestre confirmou (/confirmar).",
+  "regras_de_forma": {
+    "perguntas_por_mensagem": 1,
+    "palavras_max": 120,
+    "sem_relatorio": true
+  },
+  "modes": {
+    "aventura": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "refs",
+        "title": "Referências",
+        "evidence": [
+          {
+            "read": [
+              "shared/session-principles.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "ambiente",
+        "title": "Detecção do ambiente e índice da midwife",
+        "evidence": [
+          {
+            "read": [
+              "_midwife/index.md"
+            ],
+            "if_exists": true
+          },
+          {
+            "human": "campanha-existente-ou-nova",
+            "kind": "pergunta"
+          }
+        ]
+      },
+      {
+        "id": "descobrir",
+        "title": "Fase 1: descobrir o que o mestre tem",
+        "evidence": [
+          {
+            "read": [
+              "ttrpg-expert/arc-spotlight-reference.md",
+              "ttrpg-expert/continuity-engine.md"
+            ],
+            "if_existing_vault": true
+          },
+          {
+            "human": "descoberta",
+            "kind": "pergunta"
+          }
+        ]
+      },
+      {
+        "id": "formar",
+        "title": "Fase 2: premissa, tom, tensão, forças (grava chapter-shape.md)",
+        "evidence": [
+          {
+            "read": [
+              "ttrpg-expert/scenario-writing.md"
+            ]
+          },
+          {
+            "human": "forma",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "estruturar",
+        "title": "Fase 3: PNJs, facções, locais, relações (grava npcs/ e adventures/)",
+        "evidence": [
+          {
+            "human": "estrutura",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "scaffold",
+        "title": "Fase 4: briefing e scaffold do vault",
+        "evidence": [
+          {
+            "read": [
+              "the-midwife/references/scaffold-handoff.md"
+            ]
+          },
+          {
+            "human": "scaffold",
+            "kind": "canon"
+          }
+        ]
+      }
+    ],
+    "mundo": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "modo",
+        "title": "Ler o procedimento do Worldbuilding Mode",
+        "evidence": [
+          {
+            "read": [
+              "the-midwife/references/worldbuilding-mode.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dominio",
+        "title": "1. Ler o arquivo de domínio alvo em _World/ (ou criar stub do template)",
+        "evidence": [
+          {
+            "read": [
+              "_World/"
+            ],
+            "any": true
+          }
+        ]
+      },
+      {
+        "id": "cruzado",
+        "title": "2. Domínios relacionados: cross-domain-implications.md",
+        "evidence": [
+          {
+            "read": [
+              "the-midwife/references/cross-domain-implications.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "perguntas",
+        "title": "3a. Banco de perguntas, princípios e _flags.md do domínio",
+        "evidence": [
+          {
+            "read": [
+              "the-midwife/references/worldbuilding-questions.md",
+              "the-midwife/references/worldbuilding-principles.md"
+            ]
+          },
+          {
+            "read": [
+              "_World/_flags.md"
+            ],
+            "if_exists": true
+          }
+        ]
+      },
+      {
+        "id": "conversa",
+        "title": "3b. Cadeia de porquês: UMA pergunta por vez, 2-3 turnos por fio (forma: form_gate)",
+        "evidence": [
+          {
+            "human": "why-chain",
+            "kind": "pergunta"
+          }
+        ]
+      },
+      {
+        "id": "gravar",
+        "title": "4. Atualizar o domínio só com o que o mestre confirmou (confirm_gate)",
+        "evidence": [
+          {
+            "human": "dominio",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "implicacoes",
+        "title": "5-6. Oferecer implicações cruzadas e Second-Order Notes",
+        "evidence": [
+          {
+            "human": "implicacoes",
+            "kind": "pergunta"
+          }
+        ]
+      }
+    ]
+  },
+  "mode_triggers": {
+    "mundo": "\\bmundo\\b|\\bworld\\b|setting|cen[áa]rio|worldbuild|pol[ií]tica|fac[cç][aã]o|_World"
+  },
+  "mode_default": "aventura",
+  "hook": {}
+}

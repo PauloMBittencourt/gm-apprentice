@@ -9,6 +9,13 @@ Releases before 1.11.0 are in [docs/history/changelog-archive.md](docs/history/c
 
 ---
 
+## [1.12.34] — 2026-11-19
+
+### Added
+
+- The harness ships with the plugin: hooks that walk each skill through its steps and check each one from the outside. It acts only in a gm-apprentice vault and only watches until the vault opts in with `.claude/harness/modes.json` (see `docs/harness.md`).
+- A test fails when a skill drops or renames a reference file its harness flow reads.
+
 ## [1.12.33] — 2026-11-13
 
 ### Fixed

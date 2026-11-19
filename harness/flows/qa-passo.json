@@ -1,0 +1,288 @@
+{
+  "schema": 1,
+  "skill": "qa-passo",
+  "status": "mvp",
+  "source": "derivado de flows/campaign-qa.json (full_audit) para o experimento MVP; sem site, sem D&D, sem passo de escopo",
+  "modes": {
+    "full_audit": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "canon",
+        "title": "Canon Audit",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/canon-audit.md"
+            ]
+          },
+          {
+            "run": "vault-check.*\\bpc-body\\b"
+          },
+          {
+            "read_min": 40
+          },
+          {
+            "artifact": "_QA/.run/*canon*.md",
+            "complete_needs_pct": 90
+          }
+        ]
+      },
+      {
+        "id": "timeline",
+        "title": "Timeline Validation",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/timeline-validation.md"
+            ]
+          },
+          {
+            "run": "vault-check.*timeline\\s+--order"
+          },
+          {
+            "artifact": "_QA/.run/*timeline*.md"
+          }
+        ]
+      },
+      {
+        "id": "nomes",
+        "title": "Name Similarity",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/name-similarity.md"
+            ]
+          },
+          {
+            "run": "vault-check.*\\bnames\\b"
+          },
+          {
+            "artifact": "_QA/.run/*nomes*.md"
+          }
+        ]
+      },
+      {
+        "id": "pistas",
+        "title": "Clue Redundancy",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/clue-redundancy.md"
+            ]
+          },
+          {
+            "artifact": "_QA/.run/*pistas*.md"
+          }
+        ]
+      },
+      {
+        "id": "grafo",
+        "title": "Graph Health",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/graph-health.md"
+            ]
+          },
+          {
+            "run": "graph-check.*\\ball\\b"
+          },
+          {
+            "run": "gma(\\.py)?\"?\\s+links\\b"
+          },
+          {
+            "run": "vault-check.*\\bindex\\b"
+          },
+          {
+            "run": "vault-check.*\\bgm-leak\\b"
+          },
+          {
+            "run": "vault-check.*\\bfrontmatter\\b"
+          },
+          {
+            "run": "vault-check.*\\bstories\\b"
+          },
+          {
+            "run": "vault-check.*\\bsessions\\b"
+          },
+          {
+            "run": "vault-check.*\\brelationships\\b"
+          },
+          {
+            "artifact": "_QA/.run/*grafo*.md"
+          }
+        ]
+      },
+      {
+        "id": "tons",
+        "title": "Tone Words",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/tone-words.md"
+            ]
+          },
+          {
+            "run": "gma(\\.py)?\"?\\s+tones\\b"
+          }
+        ]
+      },
+      {
+        "id": "legado",
+        "title": "Legacy Canon Field Repair",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/legacy-canon-field-repair.md"
+            ]
+          },
+          {
+            "run": "(vault-check.*\\bfrontmatter\\b|stamp-entities.*--repair-canon)"
+          }
+        ]
+      },
+      {
+        "id": "rascunhos",
+        "title": "Stale DRAFT",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/stale-draft-detection.md"
+            ]
+          },
+          {
+            "run": "vault-check.*stale-drafts"
+          }
+        ]
+      },
+      {
+        "id": "wrapup",
+        "title": "Wrap-Up Conformance",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/wrapup-conformance.md"
+            ]
+          },
+          {
+            "run": "vault-check.*\\bwrapup\\b"
+          }
+        ]
+      },
+      {
+        "id": "capitulos",
+        "title": "Chapter Notes",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/chapter-notes.md"
+            ]
+          },
+          {
+            "run": "vault-check.*\\bchapters\\b"
+          }
+        ]
+      },
+      {
+        "id": "pares",
+        "title": "NPC/PC Pairs",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/npc-pairs.md"
+            ]
+          },
+          {
+            "run": "vault-check.*npc-pairs"
+          }
+        ]
+      },
+      {
+        "id": "config",
+        "title": "Settings",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/settings.md"
+            ]
+          },
+          {
+            "run": "vault-check.*\\bsettings\\b"
+          }
+        ]
+      },
+      {
+        "id": "mundo",
+        "title": "World Consistency",
+        "when": {
+          "dir_exists": "_World"
+        },
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/world-audit-criteria.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "spoilers",
+        "title": "Open Spoilers",
+        "evidence": [
+          {
+            "read": [
+              "campaign-qa/references/checks/open-spoilers.md"
+            ]
+          },
+          {
+            "run": "spoiler"
+          }
+        ]
+      },
+      {
+        "id": "achados",
+        "title": "Apresentar os achados ao mestre e esperar a decisão",
+        "evidence": [
+          {
+            "human": "achados"
+          }
+        ]
+      },
+      {
+        "id": "relatorio",
+        "title": "Relatório em _QA/",
+        "evidence": [
+          {
+            "run": "vault-check.*report-new"
+          },
+          {
+            "artifact": "_QA/QA_full_audit_*.md",
+            "validate": false
+          },
+          {
+            "run": "vault-check.*report-stats"
+          }
+        ]
+      }
+    ]
+  },
+  "hook": {
+    "report_write": "^_QA/QA_full_audit_.*\\.md$",
+    "final_step": "relatorio",
+    "report_modes": [
+      "full_audit"
+    ]
+  },
+  "mode_default": "full_audit",
+  "enforce_modes": [
+    "full_audit"
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "skill": "session-play",
+  "status": "rascunho",
+  "source": "SKILL.md 1.12.33, extraído à mão; não testado",
+  "skill_md_sha256": null,
+  "strict_order": false,
+  "nota": "Skill de mesa: velocidade primeiro. Só a primeira invocação tem passos; depois é conversacional.",
+  "modes": {
+    "primeira_invocacao": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "refs",
+        "title": "Referências",
+        "evidence": [
+          {
+            "read": [
+              "shared/session-principles.md",
+              "shared/session-document-chain.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "contexto",
+        "title": "Brief do plano com as cenas",
+        "evidence": [
+          {
+            "run": "session-context.*--play"
+          }
+        ]
+      },
+      {
+        "id": "vozes",
+        "title": "Vozes",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bvoices\\b"
+          }
+        ]
+      }
+    ]
+  },
+  "hook": {}
+}

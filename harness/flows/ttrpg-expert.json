@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "skill": "ttrpg-expert",
+  "status": "rascunho",
+  "source": "SKILL.md 1.12.33, extraído à mão; não testado",
+  "skill_md_sha256": null,
+  "strict_order": false,
+  "nota": "Skill de consulta e geração: quase sem passos. O ganho vem do linter, do contexto e do /confirmar para canonizar.",
+  "modes": {
+    "worldbuilding": [
+      {
+        "id": "handoff",
+        "title": "Worldbuilding interativo é da the-midwife: oferecer a troca (worldbuilding-principles.md, Handoff)",
+        "evidence": [
+          {
+            "read": [
+              "ttrpg-expert/worldbuilding-principles.md"
+            ]
+          },
+          {
+            "human": "trocar-para-midwife",
+            "kind": "pergunta"
+          }
+        ]
+      }
+    ],
+    "regra": [
+      {
+        "id": "consulta",
+        "title": "Regras ou custo: gma rules-lookup primeiro",
+        "evidence": [
+          {
+            "run": "rules-lookup"
+          }
+        ]
+      }
+    ],
+    "conteudo": [
+      {
+        "id": "arquivo",
+        "title": "Ler o arquivo de roteamento do pedido",
+        "evidence": [
+          {
+            "read": [
+              "ttrpg-expert/"
+            ],
+            "any": true
+          }
+        ]
+      },
+      {
+        "id": "vozes",
+        "title": "Vozes (diálogo, leitura em voz alta, handout)",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bvoices\\b"
+          }
+        ]
+      },
+      {
+        "id": "lint",
+        "title": "Conteúdo gravado passa no linter; nasce DRAFT",
+        "evidence": [
+          {
+            "lint": "tocados"
+          }
+        ]
+      },
+      {
+        "id": "canonizar",
+        "title": "Promover a AUTHORITATIVE só com confirmação do mestre",
+        "evidence": [
+          {
+            "human": "promover",
+            "kind": "canon"
+          }
+        ]
+      }
+    ],
+    "continuidade": [
+      {
+        "id": "motor",
+        "title": "Varredura de continuidade",
+        "evidence": [
+          {
+            "read": [
+              "ttrpg-expert/continuity-engine.md"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "mode_triggers": {
+    "worldbuilding": "worldbuild|pol[ií]tica|fac[cç][aã]o|_World|cadeia de porqu",
+    "continuidade": "continu|contradi|canon|foreshadow",
+    "regra": "\\bregra|\\brule|como funciona|how does"
+  },
+  "mode_default": "conteudo",
+  "hook": {}
+}
