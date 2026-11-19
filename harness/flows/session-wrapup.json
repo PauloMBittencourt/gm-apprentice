@@ -1,0 +1,196 @@
+{
+  "schema": 1,
+  "skill": "session-wrapup",
+  "status": "rascunho",
+  "source": "SKILL.md 1.12.33, extraído à mão; não testado",
+  "skill_md_sha256": null,
+  "strict_order": false,
+  "modes": {
+    "padrao": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "refs",
+        "title": "Referências compartilhadas",
+        "evidence": [
+          {
+            "read": [
+              "shared/session-principles.md",
+              "shared/session-document-chain.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "fontes",
+        "title": "Reunir fontes: Play Notes, roster, plano, o que a sessão anterior deixou aberto",
+        "evidence": [
+          {
+            "read": [
+              "Play Notes"
+            ],
+            "any": true
+          },
+          {
+            "run": "session-context.*--carry"
+          }
+        ]
+      },
+      {
+        "id": "vozes",
+        "title": "Vozes (campanha e PCs)",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bvoices\\b"
+          }
+        ]
+      },
+      {
+        "id": "recap",
+        "title": "Narrative Recap em lote (wrapup-add)",
+        "evidence": [
+          {
+            "artifact": "wrapup-S*-*.txt",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "carry",
+        "title": "PC Carry-Forward por PC ativo",
+        "evidence": [
+          {
+            "run": "vault-check.*active-pcs"
+          }
+        ]
+      },
+      {
+        "id": "historias",
+        "title": "Entradas de história dos PCs e PNJs com voz",
+        "evidence": [
+          {
+            "artifact": "wrapup-S*-*.txt",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "fichas",
+        "title": "Refresh das fichas dos PCs (Current Status)",
+        "evidence": [
+          {
+            "artifact": "wrapup-S*-*.txt",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "mundo",
+        "title": "Atualizar o mundo: entidades novas e alteradas, logs, timeline",
+        "evidence": [
+          {
+            "read": [
+              "_Templates/_Template_"
+            ],
+            "any": true
+          },
+          {
+            "artifact": "wrapup-S*-*.txt",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "overview",
+        "title": "Campaign Overview",
+        "evidence": [
+          {
+            "artifact": "wrapup-S*-*.txt",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "fatos",
+        "title": "World Fact Scan",
+        "when": {
+          "dir_exists": "_World"
+        },
+        "evidence": [
+          {
+            "read": [
+              "session-wrapup/references/world-fact-detection.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "gm-notes",
+        "title": "GM Notes restantes e fios compartilhados",
+        "evidence": [
+          {
+            "artifact": "wrapup-S*-*.txt",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "revisao",
+        "title": "Prévia do lote e revisão pelo mestre",
+        "evidence": [
+          {
+            "run": "vault-write.*\\bbatch\\b"
+          },
+          {
+            "human": "revisao-do-lote",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "gravar",
+        "title": "Gravar o lote e corrigir todo ERROR das checagens",
+        "after": "revisao",
+        "evidence": [
+          {
+            "run": "vault-write.*\\bbatch\\b.*--write"
+          },
+          {
+            "lint": "tocados"
+          }
+        ]
+      },
+      {
+        "id": "revelar",
+        "title": "O que saiu esta noite (reveal)",
+        "evidence": [
+          {
+            "run": "reveal-scan"
+          },
+          {
+            "human": "o-que-saiu",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "reconciliar",
+        "title": "Reconcile",
+        "evidence": [
+          {
+            "human": "reconcile",
+            "kind": "canon"
+          }
+        ]
+      }
+    ]
+  },
+  "hook": {}
+}

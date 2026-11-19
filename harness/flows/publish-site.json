@@ -1,0 +1,140 @@
+{
+  "schema": 1,
+  "skill": "publish-site",
+  "status": "rascunho",
+  "source": "SKILL.md 1.12.33, extraído à mão; não testado",
+  "skill_md_sha256": null,
+  "strict_order": true,
+  "modes": {
+    "atualizar": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "site",
+        "title": "Existe site?",
+        "evidence": [
+          {
+            "run": "publish\\s+settings\\s+get.*player_site\\.publish"
+          }
+        ]
+      },
+      {
+        "id": "pin",
+        "title": "Atualizar o pin da ferramenta",
+        "evidence": [
+          {
+            "run": "publish\\s+update-pin"
+          }
+        ]
+      },
+      {
+        "id": "manifesto",
+        "title": "Diferenças do manifesto e aprovação do mestre",
+        "evidence": [
+          {
+            "run": "publish\\s+manifest\\s+diff"
+          },
+          {
+            "human": "aplicar-manifesto",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "jogadas",
+        "title": "Registrar sessões jogadas",
+        "evidence": [
+          {
+            "run": "publish\\s+manifest\\s+publish-played"
+          }
+        ]
+      },
+      {
+        "id": "dnd",
+        "title": "Sincronizar D&D Beyond",
+        "when": {
+          "system": "dnd"
+        },
+        "evidence": [
+          {
+            "run": "dnd-ddb.*--on-build"
+          }
+        ]
+      },
+      {
+        "id": "deploy",
+        "title": "Build e deploy com verificação",
+        "after": "jogadas",
+        "evidence": [
+          {
+            "run": "publish\\s+deploy.*--verify"
+          }
+        ]
+      }
+    ],
+    "configurar": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "assistente",
+        "title": "Seguir o assistente de configuração, passo a passo",
+        "evidence": [
+          {
+            "read": [
+              "publish-site/references/setup-wizard.md"
+            ]
+          },
+          {
+            "human": "configuracao",
+            "kind": "canon"
+          }
+        ]
+      }
+    ],
+    "diagnosticar": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "doutor",
+        "title": "Doctor do site",
+        "evidence": [
+          {
+            "run": "publish\\s+doctor\\s+--site"
+          },
+          {
+            "read": [
+              "publish-site/references/troubleshooting.md"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "mode_triggers": {
+    "diagnosticar": "broken|quebrad|erro|fault|portrait|n[ãa]o aparece|diagnos|troubleshoot",
+    "configurar": "set ?up|configur|primeira vez|first time|github pages|cloudflare"
+  },
+  "mode_default": "atualizar",
+  "hook": {}
+}

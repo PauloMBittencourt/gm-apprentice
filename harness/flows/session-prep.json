@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "skill": "session-prep",
+  "status": "rascunho",
+  "source": "SKILL.md 1.12.33, extraído à mão; não testado",
+  "skill_md_sha256": null,
+  "strict_order": false,
+  "modes": {
+    "completo": [
+      {
+        "id": "versao",
+        "title": "Version gate",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "refs",
+        "title": "Referências",
+        "evidence": [
+          {
+            "read": [
+              "shared/session-principles.md",
+              "shared/session-document-chain.md",
+              "session-prep/references/session-templates.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "contexto",
+        "title": "Contexto em uma chamada (opening move)",
+        "evidence": [
+          {
+            "run": "session-context.*--prep"
+          }
+        ]
+      },
+      {
+        "id": "vozes",
+        "title": "Vozes e rascunhos antigos",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bvoices\\b"
+          },
+          {
+            "run": "vault-check.*stale-drafts"
+          }
+        ]
+      },
+      {
+        "id": "reconciliar",
+        "title": "Reconcile (se a sessão anterior está em wrap-up)",
+        "evidence": [
+          {
+            "human": "reconcile",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "colher",
+        "title": "Recap, fios, PNJs, mundo, planos narrativos (passos 6 a 10c)",
+        "evidence": [
+          {
+            "read": [
+              "ttrpg-expert/arc-spotlight-reference.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "intencao",
+        "title": "Intenção da sessão (decisão do mestre)",
+        "evidence": [
+          {
+            "human": "intencao",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "elenco",
+        "title": "Roster e arcos dos PCs",
+        "evidence": [
+          {
+            "artifact": "plano-sessao",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "destaque",
+        "title": "Destaque e pontos de contato (decisão do mestre)",
+        "evidence": [
+          {
+            "human": "destaque",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "cenas",
+        "title": "Cenas, uma a uma, com o mestre",
+        "evidence": [
+          {
+            "human": "cena",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "plano",
+        "title": "Gravar o Plano",
+        "after": "cenas",
+        "evidence": [
+          {
+            "run": "vault-write.*\\bplan\\b.*--write"
+          }
+        ]
+      },
+      {
+        "id": "verificar",
+        "title": "Checagens do Plano e lacunas",
+        "evidence": [
+          {
+            "run": "(plan-check|vault-write.*\\bplan\\b)"
+          }
+        ]
+      }
+    ]
+  },
+  "hook": {}
+}

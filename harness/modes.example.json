@@ -1,0 +1,8 @@
+{
+  "_leia-me": "Copie para <vault>/.claude/harness/modes.json para ligar os bloqueios neste vault. Cada guarda: off (ignora), observe (não bloqueia; registra em observe.log o que bloquearia) ou enforce (bloqueia). Chaves: `guarda@skill` (mais específica) ou `guarda`. Sem chave, vale o padrão da skill: enforce se o fluxo é mvp/validado, observe se é rascunho. Vault sem modes.json: tudo em observe.",
+  "confirmacao@_World": "enforce",
+  "confirmacao@_midwife": "observe",
+  "forma@the-midwife": "enforce",
+  "forma@ttrpg-expert": "enforce",
+  "forma.max_chars": 900
+}

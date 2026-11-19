@@ -186,6 +186,8 @@ Tell Claude which system you're running when you start — it won't assume.
   campaign's site, what it does and its default
 - [Drawing pictures](docs/images.md) — portraits, places and scene
   pictures drawn on your own Google key, inside limits you set
+- [The harness](docs/harness.md) — hooks that walk each skill through
+  its steps in Claude Code, and how a vault turns them on
 - [Personal reference files](docs/personal-reference-files.md) — add your
   own rulebook content for deeper system support
 - [gm-apprentice-publish](tools/publish/README.md) — reference for the

@@ -1,0 +1,136 @@
+{
+  "schema": 1,
+  "skill": "vault-ingest",
+  "status": "rascunho",
+  "source": "SKILL.md 1.12.33, extraído à mão; não testado",
+  "skill_md_sha256": null,
+  "strict_order": true,
+  "modes": {
+    "padrao": [
+      {
+        "id": "refs",
+        "title": "Referências compartilhadas",
+        "evidence": [
+          {
+            "read": [
+              "shared/session-principles.md",
+              "shared/session-document-chain.md",
+              "shared/reconcile.md"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "versao",
+        "title": "Version gate e detecção do vault",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bversion\\b"
+          }
+        ]
+      },
+      {
+        "id": "fase1",
+        "title": "Fase 1: levantar e classificar",
+        "evidence": [
+          {
+            "read": [
+              "vault-ingest/references/classification-taxonomy.md"
+            ]
+          },
+          {
+            "run": "ingest-survey"
+          },
+          {
+            "human": "manifesto-correto",
+            "kind": "pergunta"
+          }
+        ]
+      },
+      {
+        "id": "fase2",
+        "title": "Fase 2: separar em baldes",
+        "evidence": [
+          {
+            "artifact": "_QA/.run/*ingest-baldes*.md",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "fase3",
+        "title": "Fase 3: extrair eventos de jogo, por balde, do mais antigo",
+        "evidence": [
+          {
+            "artifact": "_QA/.run/*ingest-eventos*.md",
+            "validate": false
+          }
+        ]
+      },
+      {
+        "id": "fase4",
+        "title": "Fase 4: entrevista do mestre (uma pergunta por vez)",
+        "evidence": [
+          {
+            "read": [
+              "vault-ingest/references/keeper-interview.md"
+            ]
+          },
+          {
+            "human": "entrevista",
+            "kind": "pergunta"
+          }
+        ]
+      },
+      {
+        "id": "fase5",
+        "title": "Fase 5: sintetizar e passar adiante, checando por balde",
+        "evidence": [
+          {
+            "read": [
+              "vault-ingest/references/synthesis-templates.md"
+            ]
+          },
+          {
+            "run": "vault-check.*\\bfrontmatter\\b.*--folder"
+          },
+          {
+            "lint": "tocados"
+          }
+        ]
+      },
+      {
+        "id": "fase6",
+        "title": "Fase 6: revisão com reconcile",
+        "evidence": [
+          {
+            "human": "reconcile",
+            "kind": "canon"
+          }
+        ]
+      },
+      {
+        "id": "pos",
+        "title": "Pós-ingestão: duplicatas, grafo, relações, rascunhos, wrap-ups",
+        "evidence": [
+          {
+            "run": "vault-check.*\\bnames\\b"
+          },
+          {
+            "run": "graph-check.*\\ball\\b"
+          },
+          {
+            "run": "vault-check.*\\brelationships\\b"
+          },
+          {
+            "run": "vault-check.*stale-drafts"
+          },
+          {
+            "run": "vault-check.*\\bwrapup\\b"
+          }
+        ]
+      }
+    ]
+  },
+  "hook": {}
+}
